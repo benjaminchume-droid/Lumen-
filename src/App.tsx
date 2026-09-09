@@ -6,8 +6,6 @@ import {
 import { motion, AnimatePresence } from "motion/react";
 
 import { MediaItem, Chapter, HistoryEntry, UpdateRecord, ReaderSettings } from "./types";
-import { CURATED_CATALOG } from "./data/catalog";
-import { COMPANION_ADAPTATIONS, ADAPTATION_LINKS, optimizeContentItem } from "./data/sources";
 
 // Import modular screens & widgets
 import GlassDock from "./components/GlassDock";
@@ -35,34 +33,6 @@ const INITIAL_SETTINGS: ReaderSettings = {
   adaptiveAmbientBlur: true,
 };
 
-// Initial static update feeds for instant operational testing
-const INITIAL_UPDATES: UpdateRecord[] = [
-  {
-    id: "upd-metamorphosis-2",
-    mediaId: "the-metamorphosis",
-    mediaTitle: "The Metamorphosis",
-    mediaCover: "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?auto=format&fit=crop&q=80&w=600",
-    type: "novel",
-    chapterId: "chapter-2",
-    chapterTitle: "Part II: Domestic Quarantine",
-    chapterNumber: 2,
-    updatedAt: "Today, May 27",
-    isRead: false
-  },
-  {
-    id: "upd-time-machine-1",
-    mediaId: "the-time-machine",
-    mediaTitle: "The Time Machine",
-    mediaCover: "https://images.unsplash.com/photo-1508739773434-c26b3d09e071?auto=format&fit=crop&q=80&w=600",
-    type: "manga",
-    chapterId: "chapter-1",
-    chapterTitle: "The Fourth Dimension",
-    chapterNumber: 1,
-    updatedAt: "Yesterday, May 26",
-    isRead: false
-  }
-];
-
 export default function App() {
   const [activeTab, setActiveTab] = useState<'home' | 'library' | 'history' | 'updates' | 'more'>('home');
   
@@ -71,13 +41,11 @@ export default function App() {
   const [userSession, setUserSession] = useState<{ name: string, email: string, isGuest: boolean } | null>(null);
   const [genreInterests, setGenreInterests] = useState<string[]>([]);
   
-  // Extension Ingestion states
-  const [activeSourceIds, setActiveSourceIds] = useState<string[]>([
-    "manga-dex-adapter", "keiyoushi-repo", "tachiyomi-revived", "lnreader-adapter", "shosetsu-universe"
-  ]);
+  // Extension Ingestion states — start empty (no simulated sources)
+  const [activeSourceIds, setActiveSourceIds] = useState<string[]>([]);
   const [showSourceManager, setShowSourceManager] = useState<boolean>(false);
 
-  // DB Local persist States
+  // DB Local persist States — production empty start
   const [library, setLibrary] = useState<MediaItem[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [updates, setUpdates] = useState<UpdateRecord[]>([]);
@@ -109,8 +77,9 @@ export default function App() {
       if (persistedLibrary) {
         setLibrary(JSON.parse(persistedLibrary));
       } else {
-        localStorage.setItem("lumen_library_v2", JSON.stringify(CURATED_CATALOG));
-        setLibrary(CURATED_CATALOG);
+        // Production: start empty. No demo catalog seeding.
+        localStorage.setItem("lumen_library_v2", JSON.stringify([]));
+        setLibrary([]);
       }
 
       const persistedHistory = localStorage.getItem("lumen_history");
@@ -120,8 +89,9 @@ export default function App() {
       if (persistedUpdates) {
         setUpdates(JSON.parse(persistedUpdates));
       } else {
-        localStorage.setItem("lumen_updates", JSON.stringify(INITIAL_UPDATES));
-        setUpdates(INITIAL_UPDATES);
+        // Production: no fake update feed
+        localStorage.setItem("lumen_updates", JSON.stringify([]));
+        setUpdates([]);
       }
 
       const persistedFavorites = localStorage.getItem("lumen_favorites");
@@ -283,14 +253,12 @@ export default function App() {
     }
   }, [settings.themeMode]);
 
-  // Tailor catalog series dynamically to chosen interests & active source filters
+  // Tailor catalog by chosen interests only (no forced demo items)
   const tailoredHomeCatalog = useMemo(() => {
     if (genreInterests.length === 0) return library;
-    return library.filter((item) => {
-      // Show if it matches chosen interests or is general/linked adaptation
-      const matchesGenres = item.genres.some((g) => genreInterests.includes(g));
-      return matchesGenres || item.id.includes("metamorphosis") || item.id.includes("time-machine");
-    });
+    return library.filter((item) =>
+      item.genres.some((g) => genreInterests.includes(g))
+    );
   }, [library, genreInterests]);
 
   if (!onboarded || !userSession) {
@@ -472,127 +440,45 @@ export default function App() {
                     <span>•</span>
                     <span>{selectedItem.chaptersCount} Chapters</span>
                   </div>
-                </div>
-              </div>
 
-              {/* Synopsis lines */}
-              <div className="space-y-2 relative z-10 border-t border-white/5 pt-4">
-                <h3 className="text-[10px] font-mono uppercase tracking-[0.15em] text-slate-500 font-bold">Synopsis</h3>
-                <p className="text-xs text-slate-400 leading-relaxed font-normal">{selectedItem.description}</p>
-              </div>
+                  <p className="text-sm text-slate-400 leading-relaxed line-clamp-4">
+                    {selectedItem.description}
+                  </p>
 
-              {/* ADAPTATION RELATIONSHIP LINKING SYSTEM - SHARED PROGRESS SYNC */}
-              {selectedItem && (() => {
-                const adaptationLink = ADAPTATION_LINKS.find(
-                  (l) => l.novelId === selectedItem.id || l.mangaId === selectedItem.id
-                );
-                const partnerId = adaptationLink
-                  ? (adaptationLink.novelId === selectedItem.id ? adaptationLink.mangaId : adaptationLink.novelId)
-                  : null;
-                const partnerItem = partnerId
-                  ? (library.find((item) => item.id === partnerId) || COMPANION_ADAPTATIONS.find((item) => item.id === partnerId))
-                  : null;
-
-                if (!partnerItem) return null;
-
-                const hasReadCurrent = history.find(h => h.mediaId === selectedItem.id);
-
-                return (
-                  <div className="p-4 rounded-2xl bg-gradient-to-r from-[#7BC6FF]/5 to-purple-500/5 hover:from-[#7BC6FF]/10 hover:to-purple-500/10 border border-[#7BC6FF]/15 space-y-2 relative overflow-hidden transition-all duration-300">
-                    <div className="absolute top-0 right-0 p-1.5 px-3 bg-[#7BC6FF]/10 text-[#7BC6FF] text-[8px] font-mono rounded-bl-xl font-bold uppercase tracking-wider">
-                      SHARED PROGRESS ACTIVE
-                    </div>
-                    <div className="space-y-1">
-                      <h4 className="text-xs font-semibold text-slate-200 flex items-center gap-1.5 pt-1">
-                        <Sparkles className="w-3.5 h-3.5 text-[#7BC6FF]" />
-                        Cross-Medium Adaptation Linked
-                      </h4>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">
-                        This series supports companion configurations. Seamlessly synchronize read markers across formats and transition dynamically to:
-                      </p>
-                      <p className="text-xs text-white font-bold leading-none pt-1">
-                        • {partnerItem.title} ({partnerItem.type.toUpperCase()})
-                      </p>
-                    </div>
-
-                    <button
-                      id={`btn-jump-adaptation-${partnerItem.id}`}
-                      onClick={() => {
-                        // If companion is missing from shelf records, insert it
-                        if (!library.some(b => b.id === partnerItem.id)) {
-                          syncLibrary([partnerItem, ...library]);
-                        }
-                        
-                        // Preserve reading metrics synchronizations
-                        if (hasReadCurrent && partnerItem.chapters.length > 0) {
-                          const originalPercent = Math.min(hasReadCurrent.progressPercent || 0, 100);
-                          const companionChapter = partnerItem.chapters[0];
-                          const companionHist: HistoryEntry = {
-                            id: `hist-${partnerItem.id}-${companionChapter.id}`,
-                            mediaId: partnerItem.id,
-                            mediaTitle: partnerItem.title,
-                            mediaCover: partnerItem.coverUrl,
-                            type: partnerItem.type,
-                            chapterId: companionChapter.id,
-                            chapterTitle: companionChapter.title,
-                            chapterNumber: companionChapter.number,
-                            progressPercent: originalPercent,
-                            lastReadTimestamp: Date.now(),
-                            readingDurationMs: hasReadCurrent.readingDurationMs
-                          };
-                          const nextHist = [companionHist, ...history.filter(h => h.mediaId !== partnerItem.id)];
-                          setHistory(nextHist);
-                          localStorage.setItem("lumen_history", JSON.stringify(nextHist));
-                        }
-                        
-                        setSelectedItem(partnerItem);
-                      }}
-                      className="px-4 py-2 bg-[#7BC6FF]/10 border border-[#7BC6FF]/25 hover:bg-[#7BC6FF] hover:text-slate-950 font-mono text-[10px] font-bold text-[#7BC6FF] rounded-xl cursor-pointer transition-all flex items-center gap-1.5 mt-2"
-                    >
-                      <span>💡 SWITCH TO {partnerItem.type.toUpperCase()} ADAPTATION</span>
-                    </button>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {selectedItem.genres.map((g) => (
+                      <span key={g} className="px-2 py-0.5 bg-white/5 text-slate-400 text-[10px] rounded-md font-mono">{g}</span>
+                    ))}
                   </div>
-                );
-              })()}
-
-              {/* Chapters list box */}
-              <div className="space-y-3 pt-2 relative z-10 border-t border-white/5">
-                <div className="flex justify-between items-center text-[10px] font-mono uppercase tracking-[0.15em] text-slate-500 pl-1">
-                  <span>CHAPTERS LIST</span>
-                  <span>RELEASE INDEX</span>
                 </div>
+              </div>
 
-                <div className="max-h-44 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/15 space-y-2">
+              {/* Chapter list */}
+              <div className="space-y-3 relative z-10">
+                <h3 className="text-xs uppercase font-mono tracking-[0.2em] text-slate-400 font-semibold">Chapters</h3>
+                <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
                   {selectedItem.chapters.map((ch) => {
-                    const readEntry = history.find((h) => h.mediaId === selectedItem.id && h.chapterId === ch.id);
-                    const isFullyRead = readEntry && readEntry.progressPercent >= 90;
-                    
+                    const readEntry = history.find(h => h.mediaId === selectedItem.id && h.chapterId === ch.id);
                     return (
                       <button
-                        id={`ch-row-${ch.id}`}
                         key={ch.id}
                         onClick={() => {
                           setActiveReadingItem(selectedItem);
                           setActiveReadingChapter(ch);
-                          setSelectedItem(null); // Close overview
+                          setSelectedItem(null);
                         }}
-                        className="w-full p-3 border border-white/5 bg-white/5 hover:bg-white/10 rounded-2xl flex justify-between items-center transition-all cursor-pointer group hover:border-[#7BC6FF]/30 text-left"
+                        className="w-full flex items-center justify-between gap-4 p-3 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 hover:border-[#7BC6FF]/30 transition-all cursor-pointer text-left"
                       >
-                        <div className="flex items-center gap-2.5">
-                          <Play className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#7BC6FF] transition-colors" />
+                        <div className="flex items-center gap-3 min-w-0">
+                          <span className="text-xs font-mono text-[#7BC6FF] font-bold w-6">{ch.number}</span>
                           <div className="min-w-0">
-                            <h4 className="font-semibold text-xs text-white group-hover:text-[#7BC6FF] transition-colors">
-                              Chapter {ch.number}: {ch.title}
-                            </h4>
-                            {isFullyRead ? (
-                              <span className="text-[8px] font-mono font-bold bg-[#7BC6FF]/20 text-[#7BC6FF] px-1 rounded uppercase tracking-wider">COMPLETED</span>
-                            ) : readEntry ? (
-                              <span className="text-[8px] font-mono text-slate-500 font-semibold">{readEntry.progressPercent}% progress index</span>
+                            <p className="text-sm font-medium text-white truncate">{ch.title}</p>
+                            {readEntry ? (
+                              <span className="text-[8px] font-mono text-slate-500 font-semibold">{readEntry.progressPercent}% progress</span>
                             ) : null}
                           </div>
                         </div>
-
-                        <span className="text-[10px] font-mono text-slate-500 uppercase">{ch.uploadedAt}</span>
+                        <span className="text-[10px] font-mono text-slate-500 uppercase shrink-0">{ch.uploadedAt}</span>
                       </button>
                     );
                   })}
