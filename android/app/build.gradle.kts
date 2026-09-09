@@ -18,7 +18,11 @@ android {
 
         buildConfigField("String", "GITHUB_OWNER", "\"benjaminchume-droid\"")
         buildConfigField("String", "GITHUB_REPO", "\"Lumen-\"")
-        buildConfigField("String", "UPDATE_ENDPOINT", "\"https://api.github.com/repos/benjaminchume-droid/Lumen-/releases/latest\"")
+        buildConfigField(
+            "String",
+            "UPDATE_ENDPOINT",
+            "\"https://api.github.com/repos/benjaminchume-droid/Lumen-/releases/latest\""
+        )
     }
 
     signingConfigs {
@@ -33,17 +37,18 @@ android {
             }
             if (resolved != null) {
                 storeFile = resolved
-                storePassword = System.getenv("LUMEN_STORE_PASSWORD") ?: ""
+                storePassword = System.getenv("LUMEN_STORE_PASSWORD") ?: "lumenStorePass2026"
                 keyAlias = System.getenv("LUMEN_KEY_ALIAS") ?: "lumen"
-                keyPassword = System.getenv("LUMEN_KEY_PASSWORD") ?: ""
+                keyPassword = System.getenv("LUMEN_KEY_PASSWORD") ?: "lumenStorePass2026"
             }
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // Keep off until ProGuard rules are tuned for Compose + OkHttp
+            isMinifyEnabled = false
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -55,7 +60,6 @@ android {
             if (hasKeystore) {
                 signingConfig = releaseCfg
             } else {
-                // CI without secrets should fail earlier; local debug release stays unsigned
                 println("WARNING: release signing config incomplete — building unsigned release")
             }
         }
