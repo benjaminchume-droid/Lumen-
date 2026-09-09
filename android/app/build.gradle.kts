@@ -15,15 +15,28 @@ android {
         versionCode = (System.getenv("VERSION_CODE") ?: "1").toInt()
         versionName = System.getenv("VERSION_NAME") ?: "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "GITHUB_OWNER", "\"benjaminchume-droid\"")
+        buildConfigField("String", "GITHUB_REPO", "\"Lumen-\"")
+        buildConfigField("String", "UPDATE_ENDPOINT", "\"https://api.github.com/repos/benjaminchume-droid/Lumen-/releases/latest\"")
     }
 
     signingConfigs {
         create("release") {
             val storeFilePath = System.getenv("LUMEN_KEYSTORE_PATH") ?: "release.keystore"
-            storeFile = file(storeFilePath)
-            storePassword = System.getenv("LUMEN_STORE_PASSWORD") ?: ""
-            keyAlias = System.getenv("LUMEN_KEY_ALIAS") ?: "lumen"
-            keyPassword = System.getenv("LUMEN_KEY_PASSWORD") ?: ""
+            val candidate = file(storeFilePath)
+            val alt = file("release.keystore")
+            val resolved = when {
+                candidate.exists() -> candidate
+                alt.exists() -> alt
+                else -> null
+            }
+            if (resolved != null) {
+                storeFile = resolved
+                storePassword = System.getenv("LUMEN_STORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("LUMEN_KEY_ALIAS") ?: "lumen"
+                keyPassword = System.getenv("LUMEN_KEY_PASSWORD") ?: ""
+            }
         }
     }
 
@@ -35,7 +48,16 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            signingConfig = signingConfigs.getByName("release")
+            val releaseCfg = signingConfigs.getByName("release")
+            val hasKeystore = releaseCfg.storeFile?.exists() == true &&
+                !releaseCfg.storePassword.isNullOrBlank() &&
+                !releaseCfg.keyPassword.isNullOrBlank()
+            if (hasKeystore) {
+                signingConfig = releaseCfg
+            } else {
+                // CI without secrets should fail earlier; local debug release stays unsigned
+                println("WARNING: release signing config incomplete — building unsigned release")
+            }
         }
         debug {
             applicationIdSuffix = ".debug"
