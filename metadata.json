@@ -1,0 +1,6 @@
+{
+  "name": "Lumen",
+  "description": "A premium cinematic reading operating system for manga, novels, and hybrid content with fluid liquid glass aesthetics, advanced engines, and custom-tailored readers.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
