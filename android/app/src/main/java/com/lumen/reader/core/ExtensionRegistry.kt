@@ -4,13 +4,33 @@ data class ExtensionRepo(
     val id: String,
     val name: String,
     val indexUrl: String,
-    val kind: String
+    val kind: String // "manga" | "novel" | "both"
 )
 
 class ExtensionRegistry {
     private val packages = mutableMapOf<String, Pair<ExtensionManifest, () -> Source>>()
     private val enabled = mutableSetOf<String>()
     private val repos = mutableListOf<ExtensionRepo>()
+
+    init {
+        // Official providers only — indexes are downloaded; sources on demand
+        addRepo(
+            ExtensionRepo(
+                id = "keiyoushi",
+                name = "Keiyoushi (Mihon)",
+                indexUrl = "https://raw.githubusercontent.com/keiyoushi/extensions/repo/index.json",
+                kind = "manga"
+            )
+        )
+        addRepo(
+            ExtensionRepo(
+                id = "lnreader",
+                name = "LNReader Official",
+                indexUrl = "https://raw.githubusercontent.com/LNReader/lnreader-plugins/plugins/v3.0.0/.dist/plugins.min.json",
+                kind = "novel"
+            )
+        )
+    }
 
     fun register(manifest: ExtensionManifest, factory: () -> Source) {
         packages[manifest.id] = manifest to factory
