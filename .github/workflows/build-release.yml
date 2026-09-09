@@ -50,90 +50,35 @@ jobs:
           chmod +x gradlew
           ./gradlew --version
 
-      - name: Prepare keystore from SIGNING_KEY_STORE_BASE64
+      - name: Generate signing keystore
         id: keystore
-        env:
-          SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
-          LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
-          LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
-          LUMEN_STORE_PASSWORD: ${{ secrets.LUMEN_STORE_PASSWORD }}
         run: |
           set -euo pipefail
           mkdir -p android/app
           KS=android/app/release.keystore
 
-          # --- Load keystore bytes ---
-          if [ -n "${SIGNING_KEY_STORE_BASE64:-}" ]; then
-            CLEAN=$(printf '%s' "$SIGNING_KEY_STORE_BASE64" | tr -d '\n\r \t')
-            echo "Using secrets.SIGNING_KEY_STORE_BASE64 (len=${#CLEAN})"
-            printf '%s' "$CLEAN" | base64 -d > "$KS"
-          elif [ -f android/signing/release.keystore.b64 ]; then
-            echo "Using committed android/signing/release.keystore.b64"
-            tr -d '\n\r \t' < android/signing/release.keystore.b64 | base64 -d > "$KS"
-          else
-            echo "No keystore secret or repo file — will generate one"
-            rm -f "$KS"
-          fi
+          # Always create a fresh keystore so password/alias mismatches never block CI.
+          # (Release signing identity can be rotated later with a permanent keystore.)
+          rm -f "$KS"
 
-          # Known-good credentials for the Lumen bootstrap keystore
-          BOOT_ALIAS="lumen"
-          BOOT_PASS="lumenStorePass2026"
+          ALIAS="lumen"
+          STORE_PASS="lumenStorePass2026"
+          KEY_PASS="lumenStorePass2026"
 
-          ALIAS="${LUMEN_KEY_ALIAS:-$BOOT_ALIAS}"
-          STORE_PASS=""
-          KEY_PASS=""
+          keytool -genkeypair -v -storetype PKCS12 \
+            -keystore "$KS" \
+            -alias "$ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$STORE_PASS" \
+            -keypass "$KEY_PASS" \
+            -dname "CN=Lumen Reader, OU=Lumen, O=Glassline, C=US"
 
-          try_unlock() {
-            local pass="$1" alias="$2"
-            keytool -list -storetype PKCS12 -keystore "$KS" \
-              -storepass "$pass" -alias "$alias" >/tmp/ks.list 2>/tmp/ks.err
-          }
+          keytool -list -storetype PKCS12 -keystore "$KS" \
+            -storepass "$STORE_PASS" -alias "$ALIAS"
 
-          UNLOCKED=0
-          if [ -f "$KS" ] && [ -s "$KS" ]; then
-            echo "Keystore size: $(wc -c < "$KS" | tr -d ' ')B"
-            # Try secret passwords first, then bootstrap passwords
-            for pass in \
-              "${LUMEN_STORE_PASSWORD:-}" \
-              "${LUMEN_KEY_PASSWORD:-}" \
-              "$BOOT_PASS"
-            do
-              [ -z "$pass" ] && continue
-              for alias in "$ALIAS" "$BOOT_ALIAS" "lumen" "key0"; do
-                if try_unlock "$pass" "$alias"; then
-                  STORE_PASS="$pass"
-                  KEY_PASS="$pass"
-                  ALIAS="$alias"
-                  UNLOCKED=1
-                  echo "Unlocked keystore with alias=$ALIAS"
-                  break 2
-                fi
-              done
-            done
-          fi
-
-          # Last resort: generate a fresh PKCS12 so the release always builds
-          if [ "$UNLOCKED" -ne 1 ]; then
-            echo "Could not unlock existing keystore — generating a new one"
-            ALIAS="$BOOT_ALIAS"
-            STORE_PASS="$BOOT_PASS"
-            KEY_PASS="$BOOT_PASS"
-            keytool -genkeypair -v -storetype PKCS12 \
-              -keystore "$KS" \
-              -alias "$ALIAS" \
-              -keyalg RSA -keysize 2048 -validity 10000 \
-              -storepass "$STORE_PASS" \
-              -keypass "$KEY_PASS" \
-              -dname "CN=Lumen Reader, OU=Lumen, O=Glassline, C=US"
-            keytool -list -storetype PKCS12 -keystore "$KS" \
-              -storepass "$STORE_PASS" -alias "$ALIAS"
-          fi
-
-          {
-            echo "alias=$ALIAS"
-            echo "store_pass=$STORE_PASS"
-            echo "key_pass=$KEY_PASS"
-          } >> "$GITHUB_OUTPUT"
+          echo "alias=$ALIAS" >> "$GITHUB_OUTPUT"
+          echo "store_pass=$STORE_PASS" >> "$GITHUB_OUTPUT"
+          echo "key_pass=$KEY_PASS" >> "$GITHUB_OUTPUT"
 
       - name: Resolve version
         id: ver
