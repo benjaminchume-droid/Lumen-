@@ -1,0 +1,3 @@
+-- Mirror of applied migration on project ryoewtikgwmyejrpjgnw
+-- profiles, extension_repos, sources, series, chapters, downloads, reading_progress
+-- Seeded providers: keiyoushi, lnreader
