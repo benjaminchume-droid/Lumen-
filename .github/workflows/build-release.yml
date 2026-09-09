@@ -36,16 +36,75 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Bootstrap Gradle Wrapper
+        working-directory: android
+        run: |
+          # Ensure wrapper scripts exist even if jar/scripts were not committed
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.9
+          fi
+          chmod +x gradlew
+          ./gradlew --version
+
       - name: Decode keystore
+        id: keystore
         env:
           SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
+          LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
+          LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
+          LUMEN_STORE_PASSWORD: ${{ secrets.LUMEN_STORE_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_KEY_STORE_BASE64" ]; then
-            echo "ERROR: SIGNING_KEY_STORE_BASE64 secret is missing"
+          set -euo pipefail
+
+          missing=()
+          [ -z "${SIGNING_KEY_STORE_BASE64:-}" ] && missing+=("SIGNING_KEY_STORE_BASE64")
+          [ -z "${LUMEN_KEY_ALIAS:-}" ] && missing+=("LUMEN_KEY_ALIAS")
+          [ -z "${LUMEN_KEY_PASSWORD:-}" ] && missing+=("LUMEN_KEY_PASSWORD")
+          [ -z "${LUMEN_STORE_PASSWORD:-}" ] && missing+=("LUMEN_STORE_PASSWORD")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Missing required secrets: ${missing[*]}"
+            echo "Add them under Settings → Secrets and variables → Actions."
+            echo "SIGNING_KEY_STORE_BASE64 must be the pure base64 of the .jks/.keystore file"
+            echo "(no quotes, no PEM headers). Generate with:"
+            echo "  base64 -w0 release.keystore > keystore.b64"
+            echo "  # macOS: base64 -i release.keystore | tr -d '\n' > keystore.b64"
             exit 1
           fi
-          echo "$SIGNING_KEY_STORE_BASE64" | base64 -d > android/app/release.keystore
-          ls -la android/app/release.keystore
+
+          # Strip whitespace/newlines that break base64 -d
+          CLEAN=$(printf '%s' "$SIGNING_KEY_STORE_BASE64" | tr -d '\n\r \t')
+
+          # Validate base64 alphabet before decoding
+          if ! printf '%s' "$CLEAN" | grep -Eq '^[A-Za-z0-9+/]+=*$'; then
+            echo "::error::SIGNING_KEY_STORE_BASE64 is not valid base64 (unexpected characters)."
+            echo "Re-encode the keystore with: base64 -w0 your.keystore"
+            exit 1
+          fi
+
+          if ! printf '%s' "$CLEAN" | base64 -d > android/app/release.keystore 2>/tmp/b64.err; then
+            echo "::error::base64 decode failed:"
+            cat /tmp/b64.err || true
+            echo "Secret length (after strip): ${#CLEAN}"
+            exit 1
+          fi
+
+          SIZE=$(wc -c < android/app/release.keystore | tr -d ' ')
+          if [ "$SIZE" -lt 32 ]; then
+            echo "::error::Decoded keystore is too small ($SIZE bytes) — secret is likely truncated or wrong."
+            exit 1
+          fi
+
+          # Basic magic check: JKS (0xFEEDFEED) or PKCS12 (0x30...)
+          HEX=$(xxd -p -l 4 android/app/release.keystore | tr -d '\n')
+          echo "Keystore magic: $HEX size=${SIZE}B"
+          echo "path=android/app/release.keystore" >> "$GITHUB_OUTPUT"
+          echo "has_signing=true" >> "$GITHUB_OUTPUT"
 
       - name: Resolve version
         id: ver
@@ -63,39 +122,31 @@ jobs:
             echo "tag=$TAG" >> $GITHUB_OUTPUT
           fi
 
-      - name: Grant execute permission for gradlew
-        working-directory: android
-        run: |
-          if [ ! -f gradlew ]; then
-            gradle wrapper --gradle-version 8.9
-          fi
-          chmod +x gradlew
-
       - name: Build release APK
         working-directory: android
         env:
-          LUMEN_KEYSTORE_PATH: release.keystore
+          LUMEN_KEYSTORE_PATH: app/release.keystore
           LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
           LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
           LUMEN_STORE_PASSWORD: ${{ secrets.LUMEN_STORE_PASSWORD }}
           VERSION_NAME: ${{ steps.ver.outputs.name }}
           VERSION_CODE: ${{ steps.ver.outputs.code }}
         run: |
-          ./gradlew assembleRelease --stacktrace \
+          ./gradlew assembleRelease --stacktrace --no-daemon \
             -Pandroid.injected.version.name="$VERSION_NAME" \
             -Pandroid.injected.version.code="$VERSION_CODE"
 
       - name: Locate APK
         id: apk
         run: |
-          APK=$(find android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "ERROR: No APK found"
-            find android/app/build/outputs -type f || true
+            echo "::error::No APK found under android/app/build/outputs/apk/release"
+            find android/app/build/outputs -type f 2>/dev/null || true
             exit 1
           fi
           echo "path=$APK" >> $GITHUB_OUTPUT
-          echo "Found: $APK"
+          echo "Found: $APK ($(du -h "$APK" | cut -f1))"
           ls -la "$APK"
 
       - name: Upload APK artifact
@@ -116,16 +167,19 @@ jobs:
             Signed release APK.
 
             ### Features
-            - Mihon / Shosetsu style extension system
+            - Mihon / Shosetsu style extension system (Keiyoushi + LNReader indexes)
             - Universal chapter aggregator (multi-source merge)
             - Auto-prefer single highest-quality source when coverage ≥95%
-            - Liquid-glass UI foundation
+            - Data-saver downloads (pause / resume / speed / %)
+            - In-app update check (idempotent install of new releases)
 
             ### Install
             Download the APK below and install (enable unknown sources if needed).
+            Open **Settings → Check for updates** to pull future releases automatically.
           files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
