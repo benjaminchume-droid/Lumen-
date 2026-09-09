@@ -2,6 +2,7 @@
  * Chapter download manager — data-saver first.
  * - dataSaver: lower quality images / skip redundant mirrors
  * - wifiOnly / concurrency limits to minimise bandwidth
+ * - Sequential page fetch within a chapter to avoid burst usage
  */
 
 export type DownloadStatus =
@@ -31,6 +32,9 @@ export interface DownloadOptions {
   maxConcurrent?: number;
   /** When true, skip pages already on disk */
   skipExisting?: boolean;
+  /** Prefer lower quality / smaller images */
+  maxImageWidth?: number;
+  quality?: number;
 }
 
 type Listener = (jobs: DownloadJob[]) => void;
@@ -134,16 +138,23 @@ export class DownloadManager {
     const total = job.pageUrls.length || 1;
     let done = 0;
     let bytes = 0;
+    const maxW = opts.maxImageWidth ?? (job.dataSaver ? 720 : 1600);
+    const q = opts.quality ?? (job.dataSaver ? 65 : 85);
 
     for (const rawUrl of job.pageUrls) {
       if (job.status === "paused") throw new Error("Paused");
-      const url = job.dataSaver ? this.applyDataSaver(rawUrl) : rawUrl;
-      const res = await fetch(url);
+      const url = job.dataSaver ? this.applyDataSaver(rawUrl, maxW, q) : rawUrl;
+      const res = await fetch(url, {
+        headers: {
+          Accept: "image/*,*/*;q=0.8",
+          // Hint for CDNs that support client hints
+          "Accept-Encoding": "gzip, deflate, br",
+        },
+      });
       if (!res.ok) throw new Error(`Page fetch failed: ${res.status}`);
       const buf = await res.arrayBuffer();
       bytes += buf.byteLength;
-      // In browser/web we keep in memory index; Android layer writes to disk.
-      // Store minimal metadata only to reduce RAM.
+      // Browser/web keeps minimal metadata; Android layer writes to disk.
       done++;
       job.bytesDone = bytes;
       job.progress = Math.round((done / total) * 100);
@@ -152,12 +163,20 @@ export class DownloadManager {
     job.bytesTotal = bytes;
   }
 
-  private applyDataSaver(url: string): string {
+  private applyDataSaver(url: string, maxWidth: number, quality: number): string {
     try {
       const u = new URL(url);
-      // Common CDN patterns
-      if (!u.searchParams.has("w")) u.searchParams.set("w", "720");
-      if (!u.searchParams.has("q")) u.searchParams.set("q", "70");
+      // Common CDN / image proxy patterns
+      if (!u.searchParams.has("w") && !u.searchParams.has("width")) {
+        u.searchParams.set("w", String(maxWidth));
+      }
+      if (!u.searchParams.has("q") && !u.searchParams.has("quality")) {
+        u.searchParams.set("q", String(quality));
+      }
+      // Prefer WebP when supported by CDN (many accept format=)
+      if (!u.searchParams.has("format") && !u.searchParams.has("fm")) {
+        u.searchParams.set("format", "webp");
+      }
       return u.toString();
     } catch {
       return url;
