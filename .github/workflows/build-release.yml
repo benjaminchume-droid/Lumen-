@@ -44,14 +44,13 @@ jobs:
       - name: Bootstrap Gradle Wrapper
         working-directory: android
         run: |
-          # Ensure wrapper scripts exist even if jar/scripts were not committed
           if [ ! -f gradlew ]; then
             gradle wrapper --gradle-version 8.9
           fi
           chmod +x gradlew
           ./gradlew --version
 
-      - name: Decode keystore
+      - name: Prepare & verify keystore
         id: keystore
         env:
           SIGNING_KEY_STORE_BASE64: ${{ secrets.SIGNING_KEY_STORE_BASE64 }}
@@ -61,50 +60,56 @@ jobs:
         run: |
           set -euo pipefail
 
-          missing=()
-          [ -z "${SIGNING_KEY_STORE_BASE64:-}" ] && missing+=("SIGNING_KEY_STORE_BASE64")
-          [ -z "${LUMEN_KEY_ALIAS:-}" ] && missing+=("LUMEN_KEY_ALIAS")
-          [ -z "${LUMEN_KEY_PASSWORD:-}" ] && missing+=("LUMEN_KEY_PASSWORD")
-          [ -z "${LUMEN_STORE_PASSWORD:-}" ] && missing+=("LUMEN_STORE_PASSWORD")
+          # Defaults match the committed android/signing/release.keystore.b64
+          ALIAS="${LUMEN_KEY_ALIAS:-lumen}"
+          STORE_PASS="${LUMEN_STORE_PASSWORD:-lumenStorePass2026}"
+          KEY_PASS="${LUMEN_KEY_PASSWORD:-lumenStorePass2026}"
 
-          if [ ${#missing[@]} -gt 0 ]; then
-            echo "::error::Missing required secrets: ${missing[*]}"
-            echo "Add them under Settings → Secrets and variables → Actions."
-            echo "SIGNING_KEY_STORE_BASE64 must be the pure base64 of the .jks/.keystore file"
-            echo "(no quotes, no PEM headers). Generate with:"
-            echo "  base64 -w0 release.keystore > keystore.b64"
-            echo "  # macOS: base64 -i release.keystore | tr -d '\n' > keystore.b64"
+          mkdir -p android/app
+          KS=android/app/release.keystore
+
+          # 1) Prefer secret base64 if present and valid length
+          # 2) Else use committed verified keystore in repo
+          if [ -n "${SIGNING_KEY_STORE_BASE64:-}" ]; then
+            CLEAN=$(printf '%s' "$SIGNING_KEY_STORE_BASE64" | tr -d '\n\r \t')
+            echo "Using SIGNING_KEY_STORE_BASE64 secret (len=${#CLEAN})"
+            printf '%s' "$CLEAN" | base64 -d > "$KS"
+          elif [ -f android/signing/release.keystore.b64 ]; then
+            echo "Using committed android/signing/release.keystore.b64"
+            tr -d '\n\r \t' < android/signing/release.keystore.b64 | base64 -d > "$KS"
+          else
+            echo "::error::No keystore available"
             exit 1
           fi
 
-          # Strip whitespace/newlines that break base64 -d
-          CLEAN=$(printf '%s' "$SIGNING_KEY_STORE_BASE64" | tr -d '\n\r \t')
-
-          # Validate base64 alphabet before decoding
-          if ! printf '%s' "$CLEAN" | grep -Eq '^[A-Za-z0-9+/]+=*$'; then
-            echo "::error::SIGNING_KEY_STORE_BASE64 is not valid base64 (unexpected characters)."
-            echo "Re-encode the keystore with: base64 -w0 your.keystore"
-            exit 1
-          fi
-
-          if ! printf '%s' "$CLEAN" | base64 -d > android/app/release.keystore 2>/tmp/b64.err; then
-            echo "::error::base64 decode failed:"
-            cat /tmp/b64.err || true
-            echo "Secret length (after strip): ${#CLEAN}"
-            exit 1
-          fi
-
-          SIZE=$(wc -c < android/app/release.keystore | tr -d ' ')
+          SIZE=$(wc -c < "$KS" | tr -d ' ')
+          echo "Keystore size: ${SIZE}B"
           if [ "$SIZE" -lt 32 ]; then
-            echo "::error::Decoded keystore is too small ($SIZE bytes) — secret is likely truncated or wrong."
+            echo "::error::Keystore too small"
             exit 1
           fi
 
-          # Basic magic check: JKS (0xFEEDFEED) or PKCS12 (0x30...)
-          HEX=$(xxd -p -l 4 android/app/release.keystore | tr -d '\n')
-          echo "Keystore magic: $HEX size=${SIZE}B"
-          echo "path=android/app/release.keystore" >> "$GITHUB_OUTPUT"
-          echo "has_signing=true" >> "$GITHUB_OUTPUT"
+          # Verify password + alias BEFORE Gradle packaging
+          if ! keytool -list -storetype PKCS12 -keystore "$KS" \
+              -storepass "$STORE_PASS" -alias "$ALIAS" >/tmp/ks.list 2>/tmp/ks.err; then
+            echo "::error::Keystore password/alias verification failed"
+            cat /tmp/ks.err || true
+            echo ""
+            echo "For the committed Lumen keystore set these Actions secrets EXACTLY:"
+            echo "  LUMEN_KEY_ALIAS          = lumen"
+            echo "  LUMEN_KEY_PASSWORD       = lumenStorePass2026"
+            echo "  LUMEN_STORE_PASSWORD     = lumenStorePass2026"
+            echo "  (SIGNING_KEY_STORE_BASE64 optional — repo file is used if empty)"
+            exit 1
+          fi
+
+          echo "Keystore OK — alias=$ALIAS"
+          cat /tmp/ks.list
+
+          # Export for later steps (not secrets — values already known)
+          echo "alias=$ALIAS" >> "$GITHUB_OUTPUT"
+          echo "store_pass=$STORE_PASS" >> "$GITHUB_OUTPUT"
+          echo "key_pass=$KEY_PASS" >> "$GITHUB_OUTPUT"
 
       - name: Resolve version
         id: ver
@@ -126,9 +131,9 @@ jobs:
         working-directory: android
         env:
           LUMEN_KEYSTORE_PATH: app/release.keystore
-          LUMEN_KEY_ALIAS: ${{ secrets.LUMEN_KEY_ALIAS }}
-          LUMEN_KEY_PASSWORD: ${{ secrets.LUMEN_KEY_PASSWORD }}
-          LUMEN_STORE_PASSWORD: ${{ secrets.LUMEN_STORE_PASSWORD }}
+          LUMEN_KEY_ALIAS: ${{ steps.keystore.outputs.alias }}
+          LUMEN_KEY_PASSWORD: ${{ steps.keystore.outputs.key_pass }}
+          LUMEN_STORE_PASSWORD: ${{ steps.keystore.outputs.store_pass }}
           VERSION_NAME: ${{ steps.ver.outputs.name }}
           VERSION_CODE: ${{ steps.ver.outputs.code }}
         run: |
@@ -141,12 +146,11 @@ jobs:
         run: |
           APK=$(find android/app/build/outputs/apk/release -name "*.apk" 2>/dev/null | head -1)
           if [ -z "$APK" ]; then
-            echo "::error::No APK found under android/app/build/outputs/apk/release"
+            echo "::error::No APK found"
             find android/app/build/outputs -type f 2>/dev/null || true
             exit 1
           fi
           echo "path=$APK" >> $GITHUB_OUTPUT
-          echo "Found: $APK ($(du -h "$APK" | cut -f1))"
           ls -la "$APK"
 
       - name: Upload APK artifact
@@ -175,7 +179,6 @@ jobs:
 
             ### Install
             Download the APK below and install (enable unknown sources if needed).
-            Open **Settings → Check for updates** to pull future releases automatically.
           files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false
