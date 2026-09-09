@@ -1,5 +1,5 @@
 /**
- * Fetch + parse official Mihon / LNReader indexes.
+ * Fetch + parse official Mihon (Keiyoushi) / LNReader indexes.
  * Data-saver: only downloads index JSON; APK/JS only when user installs a source.
  */
 
@@ -33,6 +33,7 @@ async function fetchJson(url: string, signal?: AbortSignal): Promise<unknown> {
   return res.json();
 }
 
+/** Keiyoushi full index.json (protobuf-json shape) */
 function parseMihonIndexJson(data: unknown, repoId: string): DiscoveredSource[] {
   const root = data as {
     extensionList?: {
@@ -41,7 +42,7 @@ function parseMihonIndexJson(data: unknown, repoId: string): DiscoveredSource[] 
         packageName?: string;
         versionName?: string;
         contentWarning?: string;
-        resources?: { apkUrl?: string; iconUrl?: string };
+        resources?: { apkUrl?: string; iconUrl?: string; jarUrl?: string };
         sources?: Array<{
           id?: string | number;
           name?: string;
@@ -56,7 +57,7 @@ function parseMihonIndexJson(data: unknown, repoId: string): DiscoveredSource[] 
   const list = root.extensionList?.extensions ?? [];
 
   for (const ext of list) {
-    const nsfw = (ext.contentWarning || "").includes("NSFW");
+    const nsfw = (ext.contentWarning || "").toUpperCase().includes("NSFW");
     for (const s of ext.sources ?? []) {
       const id = String(s.id ?? `${ext.packageName}:${s.language}`);
       out.push({
@@ -77,6 +78,7 @@ function parseMihonIndexJson(data: unknown, repoId: string): DiscoveredSource[] 
   return out;
 }
 
+/** Legacy index.min.json array format (still supported) */
 function parseMihonIndexMin(data: unknown, repoId: string): DiscoveredSource[] {
   const list = data as Array<{
     name?: string;
@@ -110,6 +112,7 @@ function parseMihonIndexMin(data: unknown, repoId: string): DiscoveredSource[] {
   return out;
 }
 
+/** LNReader plugins.min.json */
 function parseLnReaderPlugins(data: unknown, repoId: string): DiscoveredSource[] {
   const list = data as Array<{
     id?: string;
@@ -174,4 +177,16 @@ export function toManifest(s: DiscoveredSource): ExtensionManifest {
     nsfw: s.nsfw,
     iconUrl: s.iconUrl,
   };
+}
+
+/** Measure index latency for health display (data-saver friendly HEAD/GET small) */
+export async function pingIndex(url: string): Promise<{ ok: boolean; ms: number }> {
+  const t0 = performance.now();
+  try {
+    const res = await fetch(url, { method: "GET", headers: { Accept: "application/json" } });
+    const ms = Math.round(performance.now() - t0);
+    return { ok: res.ok, ms };
+  } catch {
+    return { ok: false, ms: Math.round(performance.now() - t0) };
+  }
 }
