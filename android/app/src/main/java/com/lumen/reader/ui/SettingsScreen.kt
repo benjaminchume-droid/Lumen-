@@ -2,7 +2,6 @@ package com.lumen.reader.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,11 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cloud
-import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Storage
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -62,6 +60,7 @@ fun SettingsScreen(
     var updateMsg by remember { mutableStateOf<String?>(null) }
     var checkingUpdate by remember { mutableStateOf(false) }
     val installedCount = store.installedIds().size
+    val versionName = BuildConfig.VERSION_NAME
 
     fun pingBackend() {
         scope.launch {
@@ -88,8 +87,8 @@ fun SettingsScreen(
                     }
                     val json = JSONObject(resp.body?.string().orEmpty())
                     val tag = json.optString("tag_name", "")
-                    val current = "v${BuildConfig.VERSION_NAME}"
-                    updateMsg = if (tag.isNotBlank() && tag != current && !tag.endsWith(BuildConfig.VERSION_NAME)) {
+                    val current = "v$versionName"
+                    updateMsg = if (tag.isNotBlank() && tag != current && !tag.endsWith(versionName)) {
                         "Update available: $tag (you have $current)"
                     } else {
                         "Up to date ($current)"
@@ -111,27 +110,27 @@ fun SettingsScreen(
             .verticalScroll(scroll)
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(48.dp))
         Text("Settings", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Lumen v${BuildConfig.VERSION_NAME}",
+            "Lumen v$versionName",
             color = Color(0xFF64748B),
             fontSize = 12.sp
         )
 
-        Spacer(Modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(24.dp))
         SectionLabel("Extensions")
         SettingsRow(
-            icon = Icons.Default.Extension,
+            icon = Icons.Default.List,
             title = "Sources",
             subtitle = "$installedCount installed · Keiyoushi + LNReader",
             onClick = onOpenSources
         )
 
-        Spacer(Modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Backend")
         SettingsRow(
-            icon = Icons.Default.Cloud,
+            icon = Icons.Default.Settings,
             title = "Supabase Lumen",
             subtitle = when {
                 checkingBackend -> "Checking connection…"
@@ -158,12 +157,12 @@ fun SettingsScreen(
             }
         )
         SettingsRow(
-            icon = Icons.Default.Storage,
+            icon = Icons.Default.Info,
             title = "Project",
             subtitle = "ryoewtikgwmyejrpjgnw · eu-west-1"
         )
 
-        Spacer(Modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Updates")
         SettingsRow(
             icon = Icons.Default.Refresh,
@@ -181,7 +180,7 @@ fun SettingsScreen(
             }
         )
 
-        Spacer(Modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("About")
         SettingsRow(
             icon = Icons.Default.Info,
@@ -189,7 +188,7 @@ fun SettingsScreen(
             subtitle = "Extensions · Aggregator · Data-saver downloads"
         )
 
-        Spacer(Modifier = Modifier.height(100.dp))
+        Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
@@ -224,7 +223,7 @@ private fun SettingsRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(icon, contentDescription = null, tint = Color(0xFF7BC6FF), modifier = Modifier.size(22.dp))
-        Spacer(Modifier = Modifier.width(14.dp))
+        Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(subtitle, color = Color(0xFF64748B), fontSize = 12.sp)
