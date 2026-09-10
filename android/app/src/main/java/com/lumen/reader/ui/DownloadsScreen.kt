@@ -20,8 +20,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,7 +105,7 @@ private fun DownloadCard(task: DownloadTask, queue: DownloadQueue) {
         Text(task.chapterName, color = Color(0xFF94A3B8), fontSize = 12.sp)
         Spacer(modifier = Modifier.height(8.dp))
         LinearProgressIndicator(
-            progress = { task.progressPercent / 100f },
+            progress = task.progressPercent / 100f,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp)
