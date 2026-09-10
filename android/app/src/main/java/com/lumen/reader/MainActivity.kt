@@ -6,6 +6,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,7 +81,6 @@ fun LumenAppRoot() {
     var tab by remember { mutableStateOf(Tab.Library) }
     var sourcesOverlay by remember { mutableStateOf(false) }
 
-    // System back: close sources overlay first, else no-op on root tabs
     BackHandler(enabled = sourcesOverlay) {
         sourcesOverlay = false
     }
@@ -121,9 +121,7 @@ fun LumenAppRoot() {
                 .padding(padding)
         ) {
             when (tab) {
-                Tab.Library -> LibraryScreen(onOpenSources = {
-                    tab = Tab.Sources
-                })
+                Tab.Library -> LibraryScreen(onOpenSources = { tab = Tab.Sources })
                 Tab.Browse -> BrowseScreen(onOpenSources = { tab = Tab.Sources })
                 Tab.Sources -> SourcesScreen(embedded = true)
                 Tab.Settings -> SettingsScreen(onOpenSources = { sourcesOverlay = true })
@@ -172,29 +170,14 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
                     )
                     Spacer(Modifier = Modifier.height(16.dp))
                     Text(
-                        "Open Sources →",
-                        color = Color(0xFF7BC6FF),
+                        "Go to Sources →",
+                        color = Color(0xFF0A0C0F),
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0x227BC6FF))
+                            .background(Color(0xFF7BC6FF))
+                            .clickable(onClick = onOpenSources)
                             .padding(horizontal = 16.dp, vertical = 10.dp)
-                            .then(
-                                Modifier
-                            )
-                    )
-                    // make clickable via parent row pattern
-                    Spacer(Modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Go to Sources tab",
-                        color = Color(0xFF7BC6FF),
-                        fontSize = 13.sp,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .padding(8.dp)
-                            .then(
-                                androidx.compose.foundation.Modifier.clickable(onClick = onOpenSources)
-                            )
                     )
                 }
             }
@@ -204,7 +187,7 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
                 color = Color(0xFF94A3B8),
                 fontSize = 12.sp
             )
-            Spacer(Modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(12.dp))
             LazyColumn(
                 contentPadding = PaddingValues(bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -252,7 +235,7 @@ fun BrowseScreen(onOpenSources: () -> Unit) {
             .background(Color(0xFF0A0C0F))
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(48.dp))
         Text("Browse", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Text(
             "Discover from installed sources",
@@ -275,16 +258,16 @@ fun BrowseScreen(onOpenSources: () -> Unit) {
                     color = Color(0xFF64748B),
                     fontSize = 13.sp
                 )
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(Modifier = Modifier.height(16.dp))
                 Text(
                     "Manage Sources →",
-                    color = Color(0xFF7BC6FF),
+                    color = Color(0xFF0A0C0F),
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0x227BC6FF))
+                        .background(Color(0xFF7BC6FF))
+                        .clickable(onClick = onOpenSources)
                         .padding(horizontal = 16.dp, vertical = 10.dp)
-                        .then(androidx.compose.foundation.Modifier.clickable(onClick = onOpenSources))
                 )
             }
         }
