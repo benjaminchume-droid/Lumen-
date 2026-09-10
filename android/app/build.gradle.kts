@@ -23,6 +23,16 @@ android {
             "UPDATE_ENDPOINT",
             "\"https://api.github.com/repos/benjaminchume-droid/Lumen-/releases/latest\""
         )
+        buildConfigField(
+            "String",
+            "SUPABASE_URL",
+            "\"https://ryoewtikgwmyejrpjgnw.supabase.co\""
+        )
+        buildConfigField(
+            "String",
+            "SUPABASE_ANON_KEY",
+            "\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5b2V3dGlrZ3dteWVqcnBqZ253Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg3MzYsImV4cCI6MjEwMjI4NDczNn0.KNa80UeXpIuPlVEt5sFIq4TyYtIc2ykWe-k24m7O7Pg\""
+        )
     }
 
     signingConfigs {
@@ -46,7 +56,6 @@ android {
 
     buildTypes {
         release {
-            // Keep off until ProGuard rules are tuned for Compose + OkHttp
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(
@@ -93,6 +102,7 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.navigation:navigation-compose:2.8.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.6")
