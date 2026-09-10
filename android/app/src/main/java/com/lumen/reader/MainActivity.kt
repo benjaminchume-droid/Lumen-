@@ -21,9 +21,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Explore
-import androidx.compose.material.icons.filled.Extension
-import androidx.compose.material.icons.filled.LibraryBooks
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -53,9 +53,9 @@ import com.lumen.reader.ui.SettingsScreen
 import com.lumen.reader.ui.SourcesScreen
 
 enum class Tab(val label: String, val icon: ImageVector) {
-    Library("Library", Icons.Default.LibraryBooks),
-    Browse("Browse", Icons.Default.Explore),
-    Sources("Sources", Icons.Default.Extension),
+    Library("Library", Icons.Default.Home),
+    Browse("Browse", Icons.Default.Search),
+    Sources("Sources", Icons.Default.List),
     Settings("Settings", Icons.Default.Settings)
 }
 
@@ -142,14 +142,14 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
             .background(Color(0xFF0A0C0F))
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(48.dp))
         Text("Library", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Text(
             "Your series appear here after browsing sources",
             color = Color(0xFF64748B),
             fontSize = 12.sp
         )
-        Spacer(Modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
         if (installed.isEmpty()) {
             Box(
@@ -162,13 +162,13 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("No sources installed yet", color = Color.White, fontWeight = FontWeight.Medium)
-                    Spacer(Modifier = Modifier.height(8.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Install manga (Keiyoushi) or novel (LNReader) sources to start reading.",
                         color = Color(0xFF64748B),
                         fontSize = 13.sp
                     )
-                    Spacer(Modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     Text(
                         "Go to Sources →",
                         color = Color(0xFF0A0C0F),
@@ -252,13 +252,13 @@ fun BrowseScreen(onOpenSources: () -> Unit) {
         ) {
             Column {
                 Text("Install a source to browse", color = Color.White, fontWeight = FontWeight.Medium)
-                Spacer(Modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     "Manga extensions come from Keiyoushi (Mihon). Novel plugins come from LNReader. Only indexes are downloaded until you install.",
                     color = Color(0xFF64748B),
                     fontSize = 13.sp
                 )
-                Spacer(Modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 Text(
                     "Manage Sources →",
                     color = Color(0xFF0A0C0F),
