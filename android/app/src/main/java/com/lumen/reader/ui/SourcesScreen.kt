@@ -19,9 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -100,10 +100,12 @@ fun SourcesScreen(
             SourceFilter.INSTALLED -> installed
         }
         if (query.isBlank()) base
-        else base.filter {
-            it.name.contains(query, ignoreCase = true) ||
-                it.lang.contains(query, ignoreCase = true) ||
-                it.id.contains(query, ignoreCase = true)
+        else {
+            base.filter {
+                it.name.contains(query, ignoreCase = true) ||
+                    it.lang.contains(query, ignoreCase = true) ||
+                    it.id.contains(query, ignoreCase = true)
+            }
         }
     }
 
@@ -122,7 +124,7 @@ fun SourcesScreen(
             if (onBack != null) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        Icons.Default.ArrowBack,
+                        imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Back",
                         tint = Color(0xFF7BC6FF)
                     )
@@ -130,19 +132,23 @@ fun SourcesScreen(
             }
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    "Sources",
+                    text = "Sources",
                     color = Color.White,
                     fontSize = 24.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Manga · Keiyoushi  ·  Novel · LNReader",
+                    text = "Manga · Keiyoushi  ·  Novel · LNReader",
                     color = Color(0xFF64748B),
                     fontSize = 12.sp
                 )
             }
             IconButton(onClick = { reload() }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF7BC6FF))
+                Icon(
+                    imageVector = Icons.Default.Refresh,
+                    contentDescription = "Refresh",
+                    tint = Color(0xFF7BC6FF)
+                )
             }
         }
 
@@ -154,7 +160,11 @@ fun SourcesScreen(
             modifier = Modifier.fillMaxWidth(),
             placeholder = { Text("Search sources…", color = Color(0xFF64748B)) },
             leadingIcon = {
-                Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF7BC6FF))
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = null,
+                    tint = Color(0xFF7BC6FF)
+                )
             },
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
@@ -196,21 +206,35 @@ fun SourcesScreen(
 
         when {
             loading -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         CircularProgressIndicator(color = Color(0xFF7BC6FF))
-                        Spacer(Modifier = Modifier.height(12.dp))
-                        Text("Loading extension indexes…", color = Color(0xFF64748B), fontSize = 13.sp)
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Loading extension indexes…",
+                            color = Color(0xFF64748B),
+                            fontSize = 13.sp
+                        )
                     }
                 }
             }
             error != null && catalog.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(error ?: "Error", color = Color(0xFFF87171), fontSize = 14.sp)
+                        Text(
+                            text = error ?: "Error",
+                            color = Color(0xFFF87171),
+                            fontSize = 14.sp
+                        )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
-                            "Tap refresh to retry",
+                            text = "Tap refresh to retry",
                             color = Color(0xFF7BC6FF),
                             modifier = Modifier.clickable { reload() }
                         )
@@ -219,23 +243,26 @@ fun SourcesScreen(
             }
             else -> {
                 Text(
-                    "${filtered.size} sources",
+                    text = "${filtered.size} sources",
                     color = Color(0xFF64748B),
                     fontSize = 11.sp,
                     modifier = Modifier.padding(vertical = 4.dp)
                 )
                 LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(bottom = 96.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxSize()
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filtered, key = { it.id }) { entry ->
                         SourceRow(
                             entry = entry,
                             installed = installedIds.contains(entry.id),
                             onToggle = {
-                                if (store.isInstalled(entry.id)) store.uninstall(entry.id)
-                                else store.install(entry)
+                                if (store.isInstalled(entry.id)) {
+                                    store.uninstall(entry.id)
+                                } else {
+                                    store.install(entry)
+                                }
                                 installed = store.getInstalled()
                             }
                         )
@@ -270,7 +297,7 @@ private fun SourceRow(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                if (entry.kind == MediaKind.MANGA) "M" else "N",
+                text = if (entry.kind == MediaKind.MANGA) "M" else "N",
                 color = if (entry.kind == MediaKind.MANGA) Color(0xFF7BC6FF) else Color(0xFFA78BFA),
                 fontWeight = FontWeight.Bold
             )
@@ -278,7 +305,7 @@ private fun SourceRow(
         Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                entry.name,
+                text = entry.name,
                 color = Color.White,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
@@ -286,7 +313,7 @@ private fun SourceRow(
                 overflow = TextOverflow.Ellipsis
             )
             Text(
-                buildString {
+                text = buildString {
                     append(entry.lang.uppercase())
                     append(" · v")
                     append(entry.version)
@@ -302,7 +329,7 @@ private fun SourceRow(
         }
         IconButton(onClick = onToggle) {
             Icon(
-                if (installed) Icons.Default.Check else Icons.Default.Add,
+                imageVector = if (installed) Icons.Default.Check else Icons.Default.Add,
                 contentDescription = if (installed) "Installed" else "Install",
                 tint = if (installed) Color(0xFF34D399) else Color(0xFF7BC6FF)
             )
