@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -36,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -46,8 +48,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumen.reader.core.DownloadQueue
 import com.lumen.reader.core.MediaKind
 import com.lumen.reader.core.SourceStore
+import com.lumen.reader.ui.DownloadsScreen
 import com.lumen.reader.ui.LumenTheme
 import com.lumen.reader.ui.SettingsScreen
 import com.lumen.reader.ui.SourcesScreen
@@ -56,6 +60,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Default.Home),
     Browse("Browse", Icons.Default.Search),
     Sources("Sources", Icons.Default.List),
+    Downloads("Downloads", Icons.Default.Star),
     Settings("Settings", Icons.Default.Settings)
 }
 
@@ -80,6 +85,8 @@ class MainActivity : ComponentActivity() {
 fun LumenAppRoot() {
     var tab by remember { mutableStateOf(Tab.Library) }
     var sourcesOverlay by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val downloadQueue = remember { DownloadQueue(scope) }
 
     BackHandler(enabled = sourcesOverlay) {
         sourcesOverlay = false
@@ -102,7 +109,7 @@ fun LumenAppRoot() {
                         selected = tab == t,
                         onClick = { tab = t },
                         icon = { Icon(t.icon, contentDescription = t.label) },
-                        label = { Text(t.label, fontSize = 11.sp) },
+                        label = { Text(t.label, fontSize = 10.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Color(0xFF7BC6FF),
                             selectedTextColor = Color(0xFF7BC6FF),
@@ -124,6 +131,7 @@ fun LumenAppRoot() {
                 Tab.Library -> LibraryScreen(onOpenSources = { tab = Tab.Sources })
                 Tab.Browse -> BrowseScreen(onOpenSources = { tab = Tab.Sources })
                 Tab.Sources -> SourcesScreen(embedded = true)
+                Tab.Downloads -> DownloadsScreen(queue = downloadQueue)
                 Tab.Settings -> SettingsScreen(onOpenSources = { sourcesOverlay = true })
             }
         }
@@ -145,7 +153,7 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
         Spacer(modifier = Modifier.height(48.dp))
         Text("Library", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Your series appear here after browsing sources",
+            "Install sources → browse → add series here",
             color = Color(0xFF64748B),
             fontSize = 12.sp
         )
@@ -164,7 +172,7 @@ fun LibraryScreen(onOpenSources: () -> Unit) {
                     Text("No sources installed yet", color = Color.White, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        "Install manga (Keiyoushi) or novel (LNReader) sources to start reading.",
+                        "Open Sources, install Keiyoushi (manga) or LNReader (novel), then browse.",
                         color = Color(0xFF64748B),
                         fontSize = 13.sp
                     )
@@ -254,7 +262,7 @@ fun BrowseScreen(onOpenSources: () -> Unit) {
                 Text("Install a source to browse", color = Color.White, fontWeight = FontWeight.Medium)
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Manga extensions come from Keiyoushi (Mihon). Novel plugins come from LNReader. Only indexes are downloaded until you install.",
+                    "Manga from Keiyoushi (Mihon). Novels from LNReader. Index only until you install a source.",
                     color = Color(0xFF64748B),
                     fontSize = 13.sp
                 )
