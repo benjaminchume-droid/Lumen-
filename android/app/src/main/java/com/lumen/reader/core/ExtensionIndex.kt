@@ -62,7 +62,8 @@ object ExtensionIndexFetcher {
         val out = ArrayList<IndexEntry>(arr.length())
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
-            val name = o.optString("name").ifBlank { continue }
+            val name = o.optString("name")
+            if (name.isBlank()) continue
             val pkg = o.optString("pkg").ifBlank { o.optString("id") }
             val version = o.optString("version").ifBlank { o.optInt("code").toString() }
             val lang = o.optString("lang", "all")
