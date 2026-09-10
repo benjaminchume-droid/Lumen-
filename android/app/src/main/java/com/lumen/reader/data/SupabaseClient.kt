@@ -12,7 +12,6 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Lightweight Supabase PostgREST client for Lumen project ryoewtikgwmyejrpjgnw.
- * Uses the publishable/anon key (safe for client).
  */
 object SupabaseClient {
     const val URL = "https://ryoewtikgwmyejrpjgnw.supabase.co"
@@ -34,7 +33,6 @@ object SupabaseClient {
 
     suspend fun checkHealth(): Health = withContext(Dispatchers.IO) {
         try {
-            // Public tables via PostgREST — series is core Lumen schema
             val req = Request.Builder()
                 .url("$URL/rest/v1/series?select=id&limit=1")
                 .header("apikey", ANON_KEY)
@@ -51,13 +49,10 @@ object SupabaseClient {
                         0
                     }
                     Health(true, "Connected to Lumen Supabase", count)
+                } else if (resp.code in listOf(200, 206, 404, 406) || body.contains("PGRST")) {
+                    Health(true, "Supabase reachable (schema pending or empty)", 0)
                 } else {
-                    // Table may not exist yet — still proves auth works if 404/PGRST
-                    if (resp.code in listOf(200, 206, 404, 406) || body.contains("PGRST")) {
-                        Health(true, "Supabase reachable (schema pending or empty)", 0)
-                    } else {
-                        Health(false, "HTTP ${resp.code}: ${body.take(120)}")
-                    }
+                    Health(false, "HTTP ${resp.code}: ${body.take(120)}")
                 }
             }
         } catch (e: Exception) {
@@ -81,27 +76,6 @@ object SupabaseClient {
             }
         } catch (_: Exception) {
             emptyList()
-        }
-    }
-
-    suspend fun upsertProfile(userId: String, email: String?): Boolean = withContext(Dispatchers.IO) {
-        try {
-            val payload = JSONObject()
-                .put("id", userId)
-                .put("email", email ?: JSONObject.NULL)
-                .put("updated_at", java.time.Instant.now().toString())
-                .toString()
-            val req = Request.Builder()
-                .url("$URL/rest/v1/profiles")
-                .header("apikey", ANON_KEY)
-                .header("Authorization", "Bearer $ANON_KEY")
-                .header("Content-Type", "application/json")
-                .header("Prefer", "resolution=merge-duplicates")
-                .post(payload.toRequestBody(jsonMedia))
-                .build()
-            client.newCall(req).execute().use { it.isSuccessful || it.code == 409 }
-        } catch (_: Exception) {
-            false
         }
     }
 }
