@@ -19,9 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -113,7 +113,7 @@ fun SourcesScreen(
             .background(Color(0xFF0A0C0F))
             .padding(horizontal = 16.dp)
     ) {
-        Spacer(Modifier = Modifier.height(if (embedded) 12.dp else 48.dp))
+        Spacer(modifier = Modifier.height(if (embedded) 12.dp else 48.dp))
 
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -122,7 +122,7 @@ fun SourcesScreen(
             if (onBack != null) {
                 IconButton(onClick = onBack) {
                     Icon(
-                        Icons.AutoMirrored.Filled.ArrowBack,
+                        Icons.Default.ArrowBack,
                         contentDescription = "Back",
                         tint = Color(0xFF7BC6FF)
                     )
@@ -146,7 +146,7 @@ fun SourcesScreen(
             }
         }
 
-        Spacer(Modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         OutlinedTextField(
             value = query,
@@ -169,7 +169,7 @@ fun SourcesScreen(
             )
         )
 
-        Spacer(Modifier = Modifier.height(10.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(
@@ -192,7 +192,7 @@ fun SourcesScreen(
             }
         }
 
-        Spacer(Modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         when {
             loading -> {
@@ -208,7 +208,7 @@ fun SourcesScreen(
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(error ?: "Error", color = Color(0xFFF87171), fontSize = 14.sp)
-                        Spacer(Modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             "Tap refresh to retry",
                             color = Color(0xFF7BC6FF),
@@ -275,7 +275,7 @@ private fun SourceRow(
                 fontWeight = FontWeight.Bold
             )
         }
-        Spacer(Modifier = Modifier.width(12.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 entry.name,
@@ -302,7 +302,7 @@ private fun SourceRow(
         }
         IconButton(onClick = onToggle) {
             Icon(
-                if (installed) Icons.Default.Check else Icons.Default.Download,
+                if (installed) Icons.Default.Check else Icons.Default.Add,
                 contentDescription = if (installed) "Installed" else "Install",
                 tint = if (installed) Color(0xFF34D399) else Color(0xFF7BC6FF)
             )
