@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
-  Sparkles, BookOpen, Layers, Mail, ArrowRight, Check,
-  AlertCircle, RefreshCw, KeyRound,
+  BookOpen, Layers, Mail, ArrowRight, Check,
+  AlertCircle, RefreshCw, KeyRound, Sparkles,
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { sendEmailOtp, verifyEmailOtp, guestSession, type LumenSession } from "../lib/auth";
@@ -13,7 +13,6 @@ interface GatewayProps {
 export default function Gateway({ onComplete }: GatewayProps) {
   const [step, setStep] = useState<"splash" | "onboarding" | "auth" | "genres">("splash");
   const [onboardIndex, setOnboardIndex] = useState(0);
-
   const [authMethod, setAuthMethod] = useState<"guest" | "email">("guest");
   const [emailInput, setEmailInput] = useState("");
   const [otpInput, setOtpInput] = useState("");
@@ -21,27 +20,23 @@ export default function Gateway({ onComplete }: GatewayProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState("");
   const [pendingSession, setPendingSession] = useState<LumenSession | null>(null);
-
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
 
-  const onboardingSlides = [
+  const slides = [
     {
-      title: "Extensions · Sources",
-      desc: "Install manga sources from Keiyoushi and novel plugins from LNReader — same model as Mihon.",
+      title: "Your library",
+      desc: "Install manga and novel sources, then keep everything in one place.",
       icon: Layers,
-      highlight: "#7BC6FF",
     },
     {
-      title: "Manga · Novels · Comics",
-      desc: "Browse installed sources, aggregate chapters, and read with data-saver downloads.",
+      title: "Read comfortably",
+      desc: "Clear typography for novels, smooth paging for manga, with soft ambient lighting.",
       icon: BookOpen,
-      highlight: "#a29bfe",
     },
     {
-      title: "Publish & Author",
-      desc: "Sign in with email to claim a unique author name and publish series to Lumen.",
+      title: "Optional account",
+      desc: "Browse as a guest, or sign in with email when you want to publish.",
       icon: Sparkles,
-      highlight: "#ffeaa7",
     },
   ];
 
@@ -49,12 +44,6 @@ export default function Gateway({ onComplete }: GatewayProps) {
     "Action", "Adventure", "Fantasy", "Sci-Fi", "Romance", "Horror",
     "Mystery", "Drama", "Comedy", "Slice of Life", "Psychological", "Classic",
   ];
-
-  const handleToggleGenre = (genre: string) => {
-    setSelectedGenres((prev) =>
-      prev.includes(genre) ? prev.filter((g) => g !== genre) : [...prev, genre]
-    );
-  };
 
   const handleSendOTP = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -88,10 +77,9 @@ export default function Gateway({ onComplete }: GatewayProps) {
     setStep("genres");
   };
 
-  const handleCompleteGateway = () => {
+  const handleComplete = () => {
     if (selectedGenres.length < 2) return;
-    const session = pendingSession || guestSession();
-    onComplete(session, selectedGenres);
+    onComplete(pendingSession || guestSession(), selectedGenres);
   };
 
   return (
@@ -106,102 +94,55 @@ export default function Gateway({ onComplete }: GatewayProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="flex flex-col items-center justify-center text-center space-y-10 max-w-md w-full"
+            className="flex flex-col items-center text-center space-y-10 max-w-md w-full"
           >
             <div className="space-y-4">
-              <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                transition={{ duration: 1.2, ease: "easeOut" }}
-                className="w-24 h-24 border border-white/15 bg-slate-900/60 rounded-full flex items-center justify-center shadow-2xl relative mx-auto"
-              >
-                <div className="absolute inset-0 bg-gradient-to-tr from-[#7BC6FF]/0 via-[#7BC6FF]/10 to-[#7BC6FF]/0 pointer-events-none rounded-full animate-pulse" />
+              <div className="w-24 h-24 border border-white/15 bg-slate-900/60 rounded-full flex items-center justify-center mx-auto">
                 <Layers className="w-10 h-10 text-[#7BC6FF]" />
-              </motion.div>
-              <div className="space-y-2">
-                <h1 className="text-4xl font-sans font-bold tracking-[0.22em] text-[#F5F7FA] uppercase pl-4">
-                  Lumen
-                </h1>
-                <p className="text-[10px] uppercase font-mono tracking-[0.45em] text-[#7BC6FF] font-semibold">
-                  Reading OS
-                </p>
               </div>
+              <h1 className="text-4xl font-bold tracking-[0.2em] text-[#F5F7FA] uppercase pl-3">Lumen</h1>
+              <p className="text-[10px] uppercase tracking-[0.35em] text-[#7BC6FF]/80 font-medium">Reading</p>
             </div>
             <button
               onClick={() => setStep("onboarding")}
-              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-[#7BC6FF]/35 rounded-2xl flex items-center justify-center gap-3 transition-all"
+              className="w-full py-4 bg-white/5 hover:bg-white/10 border border-white/10 rounded-2xl flex items-center justify-center gap-3"
             >
-              <span className="font-semibold text-sm tracking-widest">GET STARTED</span>
+              <span className="text-sm tracking-wide text-[#F5F7FA]/90">Get started</span>
               <ArrowRight className="w-4 h-4 text-[#7BC6FF]" />
             </button>
+            <p className="text-[10px] text-slate-600 tracking-wide">v{import.meta.env?.VITE_APP_VERSION || "1.2.0"}</p>
           </motion.div>
         )}
 
         {step === "onboarding" && (
           <motion.div
             key="onboarding"
-            initial={{ opacity: 0, x: 40 }}
+            initial={{ opacity: 0, x: 24 }}
             animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -40 }}
-            className="w-full max-w-md bg-slate-950/45 border border-white/5 rounded-3xl p-6 md:p-8 space-y-8 backdrop-blur-md"
+            exit={{ opacity: 0, x: -24 }}
+            className="w-full max-w-md bg-slate-950/50 border border-white/5 rounded-3xl p-6 space-y-8 backdrop-blur-md"
           >
-            <div className="flex justify-between text-[10px] font-mono text-slate-500">
-              <span className="font-bold tracking-widest">ONBOARDING</span>
-              <span>{onboardIndex + 1}/3</span>
+            <div className="flex justify-between text-[10px] text-slate-500 tracking-wide">
+              <span>Introduction</span>
+              <span>{onboardIndex + 1} / 3</span>
             </div>
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={onboardIndex}
-                initial={{ opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -12 }}
-                className="space-y-5 text-center py-6"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-white/5 border border-white/5 mx-auto flex items-center justify-center">
-                  {(() => {
-                    const Icon = onboardingSlides[onboardIndex].icon;
-                    return (
-                      <Icon
-                        className="w-8 h-8"
-                        style={{ color: onboardingSlides[onboardIndex].highlight }}
-                      />
-                    );
-                  })()}
-                </div>
-                <h2 className="text-xl font-bold tracking-tight">
-                  {onboardingSlides[onboardIndex].title}
-                </h2>
-                <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">
-                  {onboardingSlides[onboardIndex].desc}
-                </p>
-              </motion.div>
-            </AnimatePresence>
-            <div className="flex justify-center gap-1.5">
-              {onboardingSlides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setOnboardIndex(i)}
-                  className={`h-1.5 rounded-full transition-all ${
-                    onboardIndex === i ? "w-6 bg-[#7BC6FF]" : "w-1.5 bg-white/15"
-                  }`}
-                />
-              ))}
+            <div className="text-center space-y-4 py-6">
+              {(() => {
+                const Icon = slides[onboardIndex].icon;
+                return <Icon className="w-8 h-8 text-[#7BC6FF] mx-auto" />;
+              })()}
+              <h2 className="text-xl font-semibold text-[#F5F7FA]">{slides[onboardIndex].title}</h2>
+              <p className="text-xs text-slate-400 leading-relaxed max-w-sm mx-auto">{slides[onboardIndex].desc}</p>
             </div>
-            <div className="flex gap-4">
-              <button
-                onClick={() => setStep("auth")}
-                className="px-4 py-3 border border-white/5 bg-white/5 text-xs font-mono rounded-xl text-slate-400"
-              >
-                SKIP
+            <div className="flex gap-3">
+              <button onClick={() => setStep("auth")} className="px-4 py-3 text-xs text-slate-400 border border-white/5 rounded-xl">
+                Skip
               </button>
               <button
-                onClick={() => {
-                  if (onboardIndex < 2) setOnboardIndex((p) => p + 1);
-                  else setStep("auth");
-                }}
-                className="flex-1 py-3.5 bg-[#7BC6FF] text-slate-950 font-bold text-xs rounded-xl flex items-center justify-center gap-2 tracking-widest"
+                onClick={() => (onboardIndex < 2 ? setOnboardIndex((i) => i + 1) : setStep("auth"))}
+                className="flex-1 py-3.5 bg-[#7BC6FF] text-slate-950 text-xs font-semibold rounded-xl"
               >
-                CONTINUE <ArrowRight className="w-3.5 h-3.5" />
+                Continue
               </button>
             </div>
           </motion.div>
@@ -210,188 +151,116 @@ export default function Gateway({ onComplete }: GatewayProps) {
         {step === "auth" && (
           <motion.div
             key="auth"
-            initial={{ opacity: 0, scale: 0.96 }}
+            initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.96 }}
-            className="w-full max-w-md bg-slate-950/45 border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 backdrop-blur-md"
+            className="w-full max-w-md bg-slate-950/50 border border-white/5 rounded-3xl p-6 space-y-5 backdrop-blur-md"
           >
             <div className="text-center space-y-1">
-              <span className="text-[10px] font-mono text-[#7BC6FF] uppercase tracking-widest font-bold">
-                Sign in
-              </span>
-              <h2 className="text-2xl font-bold tracking-tight">Welcome to Lumen</h2>
+              <p className="text-[10px] tracking-wide text-[#7BC6FF]/80">Sign in</p>
+              <h2 className="text-2xl font-semibold text-[#F5F7FA]">Welcome</h2>
               <p className="text-xs text-slate-500">Guest to browse · Email to publish</p>
             </div>
 
             <div className="flex bg-slate-900 border border-white/5 rounded-2xl p-1">
-              <button
-                onClick={() => {
-                  setAuthMethod("guest");
-                  setAuthError("");
-                }}
-                className={`flex-1 py-2 text-xs font-mono font-bold rounded-xl ${
-                  authMethod === "guest" ? "bg-[#7BC6FF] text-slate-950" : "text-slate-400"
-                }`}
-              >
-                GUEST
-              </button>
-              <button
-                onClick={() => {
-                  setAuthMethod("email");
-                  setAuthError("");
-                }}
-                className={`flex-1 py-2 text-xs font-mono font-bold rounded-xl ${
-                  authMethod === "email" ? "bg-[#7BC6FF] text-slate-950" : "text-slate-400"
-                }`}
-              >
-                EMAIL OTP
-              </button>
+              {(["guest", "email"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { setAuthMethod(m); setAuthError(""); }}
+                  className={`flex-1 py-2 text-xs rounded-xl ${
+                    authMethod === m ? "bg-[#7BC6FF] text-slate-950 font-semibold" : "text-slate-400"
+                  }`}
+                >
+                  {m === "guest" ? "Guest" : "Email"}
+                </button>
+              ))}
             </div>
 
             {authError && (
-              <div className="p-3.5 bg-rose-500/10 border border-rose-500/25 rounded-xl flex items-center gap-2 text-xs text-rose-400">
-                <AlertCircle className="w-4 h-4 shrink-0" />
-                <span className="font-mono">{authError}</span>
+              <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-xl flex gap-2 text-xs text-rose-400">
+                <AlertCircle className="w-4 h-4 shrink-0" /> {authError}
               </div>
             )}
 
-            <AnimatePresence mode="wait">
-              {authMethod === "guest" && (
-                <motion.div
-                  key="guest"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="space-y-4"
-                >
-                  <p className="text-xs text-slate-400 text-center leading-relaxed">
-                    Browse and install sources locally. Upgrade later in Settings to publish.
-                  </p>
-                  <button
-                    onClick={handleGuestEntry}
-                    className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl font-bold text-xs tracking-widest flex items-center justify-center gap-2"
-                  >
-                    CONTINUE AS GUEST <Check className="w-4 h-4" />
-                  </button>
-                </motion.div>
-              )}
+            {authMethod === "guest" && (
+              <button
+                onClick={handleGuestEntry}
+                className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2"
+              >
+                Continue as guest <Check className="w-4 h-4" />
+              </button>
+            )}
 
-              {authMethod === "email" && (
-                <motion.div
-                  key="email"
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -8 }}
-                  className="space-y-4"
+            {authMethod === "email" && !isOtpSent && (
+              <form onSubmit={handleSendOTP} className="space-y-4">
+                <div className="relative">
+                  <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+                  <input
+                    type="email"
+                    required
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="you@example.com"
+                    className="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-sm outline-none focus:border-[#7BC6FF]/40"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl text-xs font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  {!isOtpSent ? (
-                    <form onSubmit={handleSendOTP} className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="text-[10px] font-mono uppercase text-slate-500 pl-1">
-                          Email
-                        </label>
-                        <div className="relative">
-                          <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-                          <input
-                            type="email"
-                            required
-                            value={emailInput}
-                            onChange={(e) => setEmailInput(e.target.value)}
-                            placeholder="you@example.com"
-                            className="w-full pl-11 pr-4 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-sm focus:outline-none focus:border-[#7BC6FF]/40 text-white"
-                          />
-                        </div>
-                      </div>
-                      <button
-                        type="submit"
-                        disabled={isLoading}
-                        className="w-full py-4 bg-[#7BC6FF] text-slate-950 font-bold text-xs tracking-widest rounded-2xl flex items-center justify-center gap-2 disabled:opacity-50"
-                      >
-                        {isLoading ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <>
-                            SEND 6-DIGIT CODE <KeyRound className="w-4 h-4" />
-                          </>
-                        )}
-                      </button>
-                    </form>
-                  ) : (
-                    <form onSubmit={handleVerifyOTP} className="space-y-4">
-                      <div className="p-4 rounded-xl bg-[#7BC6FF]/5 border border-[#7BC6FF]/10 text-xs text-slate-400 text-center space-y-1">
-                        <p>Enter the 6-digit code sent to</p>
-                        <p className="font-mono text-[#7BC6FF] font-bold">{emailInput}</p>
-                      </div>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        required
-                        value={otpInput}
-                        onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                        placeholder="000000"
-                        className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-center text-xl font-mono tracking-[0.5em] focus:outline-none focus:border-[#7BC6FF]/40 text-[#7BC6FF] font-bold"
-                      />
-                      <div className="flex gap-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsOtpSent(false);
-                            setOtpInput("");
-                            setAuthError("");
-                          }}
-                          className="px-4 py-3 border border-white/5 bg-white/5 text-[10px] font-mono rounded-xl text-slate-400"
-                        >
-                          BACK
-                        </button>
-                        <button
-                          type="submit"
-                          disabled={isLoading || otpInput.length !== 6}
-                          className="flex-1 py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl font-bold text-xs tracking-widest flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          {isLoading ? (
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                          ) : (
-                            "VERIFY & CONTINUE"
-                          )}
-                        </button>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleSendOTP as any}
-                        className="w-full text-[10px] font-mono text-slate-500 hover:text-[#7BC6FF]"
-                      >
-                        Resend code
-                      </button>
-                    </form>
-                  )}
-                </motion.div>
-              )}
-            </AnimatePresence>
+                  {isLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <>Send code <KeyRound className="w-4 h-4" /></>}
+                </button>
+              </form>
+            )}
+
+            {authMethod === "email" && isOtpSent && (
+              <form onSubmit={handleVerifyOTP} className="space-y-4">
+                <p className="text-xs text-slate-400 text-center">
+                  Enter the 6-digit code sent to <span className="text-[#7BC6FF]">{emailInput}</span>
+                </p>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="000000"
+                  className="w-full py-4 bg-white/5 border border-white/10 rounded-2xl text-center text-xl tracking-[0.4em] text-[#7BC6FF] outline-none focus:border-[#7BC6FF]/40"
+                />
+                <button
+                  type="submit"
+                  disabled={isLoading || otpInput.length !== 6}
+                  className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl text-xs font-semibold disabled:opacity-50"
+                >
+                  {isLoading ? "Checking…" : "Verify"}
+                </button>
+              </form>
+            )}
           </motion.div>
         )}
 
         {step === "genres" && (
           <motion.div
             key="genres"
-            initial={{ opacity: 0, y: 20 }}
+            initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="w-full max-w-md bg-slate-950/45 border border-white/5 rounded-3xl p-6 md:p-8 space-y-6 backdrop-blur-md"
+            className="w-full max-w-md bg-slate-950/50 border border-white/5 rounded-3xl p-6 space-y-6 backdrop-blur-md"
           >
-            <div className="text-center space-y-1">
-              <span className="text-[10px] font-mono text-[#7BC6FF] uppercase tracking-widest font-bold">
-                Preferences
-              </span>
-              <h2 className="text-xl font-bold">Pick at least 2 genres</h2>
+            <div className="text-center">
+              <h2 className="text-xl font-semibold text-[#F5F7FA]">Choose a few interests</h2>
+              <p className="text-xs text-slate-500 mt-1">Pick at least two</p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               {genresPool.map((g) => (
                 <button
                   key={g}
                   type="button"
-                  onClick={() => handleToggleGenre(g)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono border transition-all ${
+                  onClick={() =>
+                    setSelectedGenres((prev) =>
+                      prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]
+                    )
+                  }
+                  className={`px-3 py-1.5 rounded-xl text-xs border ${
                     selectedGenres.includes(g)
                       ? "bg-[#7BC6FF]/20 border-[#7BC6FF]/40 text-[#7BC6FF]"
                       : "bg-white/5 border-white/10 text-slate-400"
@@ -402,11 +271,11 @@ export default function Gateway({ onComplete }: GatewayProps) {
               ))}
             </div>
             <button
-              onClick={handleCompleteGateway}
+              onClick={handleComplete}
               disabled={selectedGenres.length < 2}
-              className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl font-bold text-xs tracking-widest disabled:opacity-40"
+              className="w-full py-4 bg-[#7BC6FF] text-slate-950 rounded-2xl text-xs font-semibold disabled:opacity-40"
             >
-              ENTER LUMEN
+              Enter Lumen
             </button>
           </motion.div>
         )}
