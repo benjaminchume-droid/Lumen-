@@ -3,7 +3,6 @@ package com.lumen.reader.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,11 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.pager.HorizontalPager
-import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,7 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -40,7 +35,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Brand palette — Frost White, Liquid Silver, Mist Gray, Deep Graphite, Soft Black, Frosted Blue */
 object LumenColors {
     val FrostWhite = Color(0xFFF5F7FA)
     val LiquidSilver = Color(0xFFD9E1EA)
@@ -54,10 +48,10 @@ data class SampleSeries(
     val id: String,
     val title: String,
     val author: String,
-    val kind: String, // novel | manga
+    val kind: String,
     val chapterTitle: String,
-    val pages: List<String>, // novel paragraphs OR manga page labels
-    val ambientHints: List<Long> // ARGB colors derived per page for ambient lighting
+    val pages: List<String>,
+    val ambientHints: List<Long>
 )
 
 val SAMPLE_NOVEL = SampleSeries(
@@ -92,7 +86,7 @@ fun ReaderScreen(
 ) {
     BackHandler(onBack = onClose)
 
-    var pageIndex by remember { mutableStateOf(0) }
+    var pageIndex by remember { mutableIntStateOf(0) }
     var progress by remember { mutableFloatStateOf(0f) }
 
     val ambient = Color(series.ambientHints.getOrElse(pageIndex) { 0xFF0A0C0F })
@@ -116,7 +110,6 @@ fun ReaderScreen(
             )
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // Top bar — faint labels
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -143,10 +136,7 @@ fun ReaderScreen(
             }
 
             if (series.kind == "novel") {
-                NovelBody(
-                    series = series,
-                    onScrollProgress = { progress = it }
-                )
+                NovelBody(series = series, onScrollProgress = { progress = it })
             } else {
                 MangaBody(
                     series = series,
@@ -155,7 +145,6 @@ fun ReaderScreen(
                 )
             }
 
-            // Bottom progress
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -172,7 +161,7 @@ fun ReaderScreen(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    "${(progress * 100).toInt()}% · ${series.pages.size} sections",
+                    "${(progress * 100).toInt()}%",
                     color = LumenColors.MistGray.copy(alpha = 0.7f),
                     fontSize = 11.sp
                 )
@@ -235,58 +224,66 @@ private fun MangaBody(
     pageIndex: Int,
     onPage: (Int) -> Unit
 ) {
-    val pager = rememberPagerState(pageCount = { series.pages.size })
-    LaunchedEffect(pager.currentPage) { onPage(pager.currentPage) }
-
+    val tint = Color(series.ambientHints.getOrElse(pageIndex) { 0xFF12151C })
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .weight(1f)
-            .padding(horizontal = 16.dp)
+            .padding(horizontal = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        HorizontalPager(
-            state = pager,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .weight(1f)
-        ) { page ->
-            val tint = Color(series.ambientHints[page])
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(vertical = 8.dp)
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(
-                        Brush.verticalGradient(
-                            listOf(tint.copy(alpha = 0.55f), LumenColors.DeepGraphite)
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        series.pages[page],
-                        color = LumenColors.FrostWhite,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Medium
+                .clip(RoundedCornerShape(20.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(tint.copy(alpha = 0.55f), LumenColors.DeepGraphite)
                     )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        "Swipe for next page",
-                        color = LumenColors.MistGray.copy(alpha = 0.6f),
-                        fontSize = 12.sp
-                    )
-                }
+                )
+                .clickable {
+                    if (pageIndex < series.pages.lastIndex) onPage(pageIndex + 1)
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    series.pages[pageIndex],
+                    color = LumenColors.FrostWhite,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Medium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    "Tap for next page",
+                    color = LumenColors.MistGray.copy(alpha = 0.6f),
+                    fontSize = 12.sp
+                )
             }
         }
-        Text(
-            "Page ${pageIndex + 1} of ${series.pages.size}",
-            color = LumenColors.MistGray.copy(alpha = 0.65f),
-            fontSize = 12.sp,
-            modifier = Modifier
-                .align(Alignment.CenterHorizontally)
-                .padding(8.dp)
-        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(
+                onClick = { if (pageIndex > 0) onPage(pageIndex - 1) },
+                enabled = pageIndex > 0
+            ) {
+                Text("Previous", color = LumenColors.FrostedBlue, fontSize = 13.sp)
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Text(
+                "${pageIndex + 1} / ${series.pages.size}",
+                color = LumenColors.MistGray.copy(alpha = 0.75f),
+                fontSize = 12.sp
+            )
+            Spacer(modifier = Modifier.width(16.dp))
+            TextButton(
+                onClick = { if (pageIndex < series.pages.lastIndex) onPage(pageIndex + 1) },
+                enabled = pageIndex < series.pages.lastIndex
+            ) {
+                Text("Next", color = LumenColors.FrostedBlue, fontSize = 13.sp)
+            }
+        }
     }
 }
 
