@@ -1,23 +1,20 @@
 /**
- * Remote DB (Supabase) helpers for series that already have stable lumen IDs.
- * Guests stay local-only; signed-in users can mirror library rows.
+ * Remote DB helpers against resumed Lumen project (ryoewtikgwmyejrpjgnw).
  */
 
 import { getSupabase } from "./supabase";
 import type { MediaItem } from "../types";
 
-export async function upsertSeriesRemote(item: MediaItem, userId?: string): Promise<{ ok: boolean; message?: string }> {
-  if (!userId) return { ok: false, message: "Sign in to sync" };
+export async function upsertSeriesRemote(item: MediaItem): Promise<{ ok: boolean; message?: string }> {
   try {
     const sb = getSupabase();
     const { error } = await sb.from("series").upsert(
       {
-        // Prefer external_id column if present; fall back to title match fields
         title: item.title,
         description: item.description || null,
         content_type: item.type === "novel" ? "novel" : "manga",
         origin_type: "external",
-        status: item.status,
+        status: item.status === "completed" ? "completed" : "ongoing",
         language: "en",
         cover_url: item.coverUrl || null,
         external_key: item.id,
@@ -25,10 +22,7 @@ export async function upsertSeriesRemote(item: MediaItem, userId?: string): Prom
       },
       { onConflict: "external_key" }
     );
-    if (error) {
-      // Table may not have external_key yet — soft fail, local remains source of truth
-      return { ok: false, message: error.message };
-    }
+    if (error) return { ok: false, message: error.message };
     return { ok: true };
   } catch (e: any) {
     return { ok: false, message: e?.message || String(e) };
@@ -60,4 +54,87 @@ export async function fetchRecommended(limit = 24): Promise<MediaItem[]> {
   } catch {
     return [];
   }
+}
+
+export async function addToLibrary(opts: {
+  userId?: string;
+  guestKey?: string;
+  externalSeriesId: string;
+}) {
+  const sb = getSupabase();
+  return sb.from("user_library").insert({
+    user_id: opts.userId || null,
+    guest_key: opts.guestKey || null,
+    external_series_id: opts.externalSeriesId,
+    status: "reading",
+  });
+}
+
+export async function upsertReaction(opts: {
+  userKey: string;
+  externalSeriesId: string;
+  chapterId: string;
+  vote: "like" | "dislike";
+}) {
+  const sb = getSupabase();
+  return sb.from("lumen_reactions").upsert(
+    {
+      user_key: opts.userKey,
+      external_series_id: opts.externalSeriesId,
+      chapter_id: opts.chapterId,
+      vote: opts.vote,
+    },
+    { onConflict: "user_key,external_series_id,chapter_id" }
+  );
+}
+
+export async function addCommentRemote(opts: {
+  userId?: string;
+  externalSeriesId: string;
+  chapterId: string;
+  author: string;
+  body: string;
+}) {
+  const sb = getSupabase();
+  return sb.from("lumen_comments").insert({
+    user_id: opts.userId || null,
+    external_series_id: opts.externalSeriesId,
+    chapter_id: opts.chapterId,
+    author: opts.author,
+    body: opts.body,
+  });
+}
+
+export async function fetchComments(externalSeriesId: string, chapterId: string) {
+  const sb = getSupabase();
+  return sb
+    .from("lumen_comments")
+    .select("id,author,body,created_at")
+    .eq("external_series_id", externalSeriesId)
+    .eq("chapter_id", chapterId)
+    .order("created_at", { ascending: false })
+    .limit(50);
+}
+
+export async function recordDownload(opts: {
+  userId?: string;
+  guestKey?: string;
+  externalSeriesId: string;
+  chapterId: string;
+  seriesTitle?: string;
+  chapterTitle?: string;
+  status?: string;
+  progress?: number;
+}) {
+  const sb = getSupabase();
+  return sb.from("user_downloads").insert({
+    user_id: opts.userId || null,
+    guest_key: opts.guestKey || null,
+    external_series_id: opts.externalSeriesId,
+    chapter_id: opts.chapterId,
+    series_title: opts.seriesTitle || null,
+    chapter_title: opts.chapterTitle || null,
+    status: opts.status || "queued",
+    progress: opts.progress ?? 0,
+  });
 }
