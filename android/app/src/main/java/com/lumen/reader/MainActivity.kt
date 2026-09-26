@@ -40,7 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier.Modifier
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -163,7 +163,7 @@ fun LumenAppRoot() {
             }
         }
     ) { padding ->
-        Box(Modifier = Modifier.fillMaxSize().padding(padding)) {
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.Home -> HomeGrid(feed, { sourcesOpen = true }, { detail = it })
                 Tab.Library -> LibraryGrid(
