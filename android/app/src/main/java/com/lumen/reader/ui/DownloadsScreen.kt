@@ -2,6 +2,7 @@ package com.lumen.reader.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -104,15 +104,20 @@ private fun DownloadCard(task: DownloadTask, queue: DownloadQueue) {
         Text(task.seriesTitle, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
         Text(task.chapterName, color = Color(0xFF94A3B8), fontSize = 12.sp)
         Spacer(modifier = Modifier.height(8.dp))
-        LinearProgressIndicator(
-            progress = task.progressPercent / 100f,
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(6.dp)
-                .clip(RoundedCornerShape(3.dp)),
-            color = Color(0xFF7BC6FF),
-            trackColor = Color(0x22FFFFFF)
-        )
+                .clip(RoundedCornerShape(3.dp))
+                .background(Color(0x22FFFFFF))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth((task.progressPercent / 100f).coerceIn(0.02f, 1f))
+                    .height(6.dp)
+                    .background(Color(0xFF7BC6FF))
+            )
+        }
         Spacer(modifier = Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
