@@ -16,6 +16,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -23,6 +25,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -30,10 +33,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumen.reader.core.ChapterSocialStore
+import com.lumen.reader.core.ChapterVote
 
 object LumenColors {
     val FrostWhite = Color(0xFFF5F7FA)
@@ -51,7 +57,8 @@ data class SampleSeries(
     val kind: String,
     val chapterTitle: String,
     val pages: List<String>,
-    val ambientHints: List<Long>
+    val ambientHints: List<Long>,
+    val chapterId: String = "ch-1"
 )
 
 val SAMPLE_NOVEL = SampleSeries(
@@ -66,7 +73,8 @@ val SAMPLE_NOVEL = SampleSeries(
         "Outside, rain moved across the glass in thin lines. Inside, the page stayed warm under her hands.",
         "Nothing urgent waited. Only the next paragraph, and the quiet between words."
     ),
-    ambientHints = listOf(0xFF1B2838, 0xFF243044, 0xFF1A2330, 0xFF2A3340)
+    ambientHints = listOf(0xFF1B2838, 0xFF243044, 0xFF1A2330, 0xFF2A3340),
+    chapterId = "ch-1"
 )
 
 val SAMPLE_MANGA = SampleSeries(
@@ -76,7 +84,8 @@ val SAMPLE_MANGA = SampleSeries(
     kind = "manga",
     chapterTitle = "Chapter 1 — First panels",
     pages = listOf("Page 1", "Page 2", "Page 3", "Page 4", "Page 5"),
-    ambientHints = listOf(0xFF1E2A3A, 0xFF2C1F2E, 0xFF1A2E28, 0xFF2A2418, 0xFF1C2430)
+    ambientHints = listOf(0xFF1E2A3A, 0xFF2C1F2E, 0xFF1A2E28, 0xFF2A2418, 0xFF1C2430),
+    chapterId = "ch-1"
 )
 
 @Composable
@@ -86,8 +95,17 @@ fun ReaderScreen(
 ) {
     BackHandler(onBack = onClose)
 
+    val context = LocalContext.current
+    val social = remember { ChapterSocialStore(context) }
+
     var pageIndex by remember { mutableIntStateOf(0) }
     var progress by remember { mutableFloatStateOf(0f) }
+    var vote by remember { mutableStateOf(social.getVote(series.id, series.chapterId)) }
+    var likes by remember { mutableIntStateOf(social.likeCount(series.id, series.chapterId)) }
+    var dislikes by remember { mutableIntStateOf(social.dislikeCount(series.id, series.chapterId)) }
+    var comments by remember { mutableStateOf(social.getComments(series.id, series.chapterId)) }
+    var draft by remember { mutableStateOf("") }
+    var showComments by remember { mutableStateOf(false) }
 
     val ambient = Color(series.ambientHints.getOrElse(pageIndex) { 0xFF0A0C0F })
     val bg = blendTowardSoftBlack(ambient, 0.72f)
@@ -135,14 +153,123 @@ fun ReaderScreen(
                 }
             }
 
-            if (series.kind == "novel") {
-                NovelBody(series = series, onScrollProgress = { progress = it })
-            } else {
-                MangaBody(
-                    series = series,
-                    pageIndex = pageIndex,
-                    onPage = { pageIndex = it }
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (series.kind == "novel") {
+                    NovelBody(series = series, onScrollProgress = { progress = it })
+                } else {
+                    MangaBody(
+                        series = series,
+                        pageIndex = pageIndex,
+                        onPage = { pageIndex = it }
+                    )
+                }
+            }
+
+            // Social bar — external series + chapter ids
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = if (vote == ChapterVote.LIKE) "▲ $likes" else "△ $likes",
+                    color = if (vote == ChapterVote.LIKE) LumenColors.FrostedBlue else LumenColors.MistGray,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable {
+                            social.setVote(series.id, series.chapterId, ChapterVote.LIKE)
+                            vote = social.getVote(series.id, series.chapterId)
+                            likes = social.likeCount(series.id, series.chapterId)
+                            dislikes = social.dislikeCount(series.id, series.chapterId)
+                        }
+                        .padding(8.dp)
                 )
+                Text(
+                    text = if (vote == ChapterVote.DISLIKE) "▼ $dislikes" else "▽ $dislikes",
+                    color = if (vote == ChapterVote.DISLIKE) Color(0xFFF87171) else LumenColors.MistGray,
+                    fontSize = 13.sp,
+                    modifier = Modifier
+                        .clickable {
+                            social.setVote(series.id, series.chapterId, ChapterVote.DISLIKE)
+                            vote = social.getVote(series.id, series.chapterId)
+                            likes = social.likeCount(series.id, series.chapterId)
+                            dislikes = social.dislikeCount(series.id, series.chapterId)
+                        }
+                        .padding(8.dp)
+                )
+                Spacer(modifier = Modifier.weight(1f))
+                Text(
+                    text = "Comments (${comments.size})",
+                    color = LumenColors.FrostedBlue,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .clickable { showComments = !showComments }
+                        .padding(8.dp)
+                )
+            }
+
+            if (showComments) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .padding(horizontal = 16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        if (comments.isEmpty()) {
+                            Text(
+                                "No comments yet on this chapter.",
+                                color = LumenColors.MistGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                        comments.forEach { c ->
+                            Text(
+                                "${c.author}",
+                                color = LumenColors.FrostedBlue.copy(alpha = 0.8f),
+                                fontSize = 11.sp
+                            )
+                            Text(
+                                c.body,
+                                color = LumenColors.LiquidSilver,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+                        }
+                    }
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedTextField(
+                            value = draft,
+                            onValueChange = { draft = it },
+                            modifier = Modifier.weight(1f),
+                            placeholder = { Text("Add a comment…", color = LumenColors.MistGray) },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = LumenColors.FrostedBlue,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.1f),
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                cursorColor = LumenColors.FrostedBlue
+                            )
+                        )
+                        TextButton(
+                            onClick = {
+                                if (draft.isNotBlank()) {
+                                    social.addComment(series.id, series.chapterId, "You", draft)
+                                    comments = social.getComments(series.id, series.chapterId)
+                                    draft = ""
+                                }
+                            }
+                        ) {
+                            Text("Post", color = LumenColors.FrostedBlue)
+                        }
+                    }
+                }
             }
 
             Column(
@@ -151,7 +278,7 @@ fun ReaderScreen(
                     .padding(16.dp)
             ) {
                 LinearProgressIndicator(
-                    progress = progress.coerceIn(0f, 1f),
+                    progress = { progress.coerceIn(0f, 1f) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(3.dp)
@@ -180,8 +307,7 @@ private fun NovelBody(series: SampleSeries, onScrollProgress: (Float) -> Unit) {
     }
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
+            .fillMaxSize()
             .verticalScroll(scroll)
             .padding(horizontal = 22.dp, vertical = 8.dp)
     ) {
@@ -227,8 +353,7 @@ private fun MangaBody(
     val tint = Color(series.ambientHints.getOrElse(pageIndex) { 0xFF12151C })
     Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .weight(1f)
+            .fillMaxSize()
             .padding(horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
