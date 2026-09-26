@@ -15,8 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -45,9 +47,7 @@ import okhttp3.Request
 import org.json.JSONObject
 
 @Composable
-fun SettingsScreen(
-    onOpenSources: () -> Unit
-) {
+fun SettingsScreen(onOpenSources: () -> Unit) {
     val context = LocalContext.current
     val store = remember { SourceStore(context) }
     val scope = rememberCoroutineScope()
@@ -76,8 +76,7 @@ fun SettingsScreen(
                     }
                     val json = JSONObject(resp.body?.string().orEmpty())
                     val tag = json.optString("tag_name", "")
-                    val current = "v$versionName"
-                    updateMsg = if (tag.isNotBlank() && tag != current && !tag.endsWith(versionName)) {
+                    updateMsg = if (tag.isNotBlank() && !tag.endsWith(versionName)) {
                         "Update available: $tag"
                     } else {
                         "You're up to date"
@@ -98,42 +97,21 @@ fun SettingsScreen(
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(48.dp))
-        Text(
-            "Settings",
-            color = LumenColors.FrostedBlue.copy(alpha = 0.7f),
-            fontSize = 11.sp,
-            letterSpacing = 1.5.sp
-        )
-        Text(
-            "System settings",
-            color = LumenColors.FrostWhite,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            "Lumen v$versionName",
-            color = LumenColors.MistGray.copy(alpha = 0.65f),
-            fontSize = 12.sp
-        )
+        Text("Settings", color = LumenColors.FrostedBlue.copy(alpha = 0.7f), fontSize = 11.sp, letterSpacing = 1.5.sp)
+        Text("System settings", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        Text("Lumen v$versionName", color = LumenColors.MistGray.copy(alpha = 0.65f), fontSize = 12.sp)
 
         Spacer(modifier = Modifier.height(24.dp))
         SectionLabel("Account")
-        SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Signed in",
-            subtitle = "Session saved on this device"
-        )
+        SettingsRow(icon = Icons.Default.Person, title = "Continue as guest", subtitle = "Read offline · upgrade anytime in Settings")
+        SettingsRow(icon = Icons.Default.Email, title = "Sign in / Sign up", subtitle = "Email OTP · 6-digit code · library sync")
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Customization")
         SettingsRow(
             icon = Icons.Default.Settings,
             title = "Theme",
-            subtitle = when (themeMode) {
-                "light" -> "Light"
-                "amoled" -> "AMOLED"
-                else -> "Dark"
-            },
+            subtitle = themeMode.replaceFirstChar { it.uppercase() },
             trailing = {
                 Row {
                     listOf("light", "dark", "amoled").forEach { mode ->
@@ -154,11 +132,7 @@ fun SettingsScreen(
                 }
             }
         )
-        SettingsRow(
-            icon = Icons.Default.Settings,
-            title = "Reader defaults",
-            subtitle = "Font, size, and page layout"
-        )
+        SettingsRow(icon = Icons.Default.Settings, title = "Reader defaults", subtitle = "Font, size, and page layout")
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Sources")
@@ -178,40 +152,20 @@ fun SettingsScreen(
             onClick = { if (!checkingUpdate) checkUpdate() },
             trailing = {
                 if (checkingUpdate) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = LumenColors.FrostedBlue
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = LumenColors.FrostedBlue)
                 }
             }
         )
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Legal")
-        SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Privacy",
-            subtitle = "Data stays on your device unless you sign in"
-        )
-        SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Terms",
-            subtitle = "Use extensions only where permitted"
-        )
-        SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Open source notices",
-            subtitle = "Third-party indexes and libraries"
-        )
+        SettingsRow(icon = Icons.Default.Info, title = "Privacy policy", subtitle = "Reading data stays on device unless you sign in")
+        SettingsRow(icon = Icons.Default.Info, title = "Terms", subtitle = "Use extensions only where permitted")
+        SettingsRow(icon = Icons.Default.Info, title = "Open source notices", subtitle = "Third-party indexes and libraries")
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("About")
-        SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Lumen",
-            subtitle = "Read novels and manga from your sources"
-        )
+        SettingsRow(icon = Icons.Default.Info, title = "Lumen", subtitle = "Read novels and manga from your sources")
 
         Spacer(modifier = Modifier.height(100.dp))
     }
@@ -244,19 +198,14 @@ private fun SettingsRow(
             .clip(RoundedCornerShape(16.dp))
             .background(LumenColors.DeepGraphite)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(16.dp),
+            .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(
-            icon,
-            contentDescription = null,
-            tint = LumenColors.FrostedBlue.copy(alpha = 0.85f),
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(14.dp))
+        Icon(icon, contentDescription = null, tint = LumenColors.FrostedBlue, modifier = Modifier.size(22.dp))
+        Spacer(modifier = Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = LumenColors.FrostWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = LumenColors.MistGray.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text(title, color = LumenColors.FrostWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = LumenColors.MistGray, fontSize = 12.sp)
         }
         trailing?.invoke()
     }
