@@ -35,6 +35,8 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-34 build-tools;34.0.0"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -50,8 +52,6 @@ jobs:
           chmod +x gradlew
           ./gradlew --version
 
-      # Stable keystore = continuous updates (same signing cert every release).
-      # Do NOT generate a new keystore per run — Android rejects updates signed with a different key.
       - name: Prepare stable signing keystore
         id: keystore
         run: |
@@ -133,20 +133,14 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: Lumen ${{ steps.ver.outputs.name }}
           body: |
-            ## Lumen Reading OS ${{ steps.ver.outputs.name }}
+            ## Lumen ${{ steps.ver.outputs.name }}
 
-            Signed release APK (stable signing key — supports continuous in-app updates).
+            Signed release APK (stable signing key for continuous updates).
 
-            ### Features
-            - Mihon / Shosetsu style extension system (Keiyoushi + LNReader indexes)
-            - Universal chapter aggregator (multi-source merge)
-            - Auto-prefer single highest-quality source when coverage ≥95%
-            - Data-saver downloads (pause / resume / speed / %)
-            - In-app update check (idempotent install of new releases)
-
-            ### Install
-            Download the APK below and install (enable unknown sources if needed).
-            Later releases can update over this install because the signing certificate is stable.
+            - Extensions (Keiyoushi + LNReader)
+            - Home feed from installed sources
+            - Series detail + chapter list
+            - Immersive reader (scroll / page)
           files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false
