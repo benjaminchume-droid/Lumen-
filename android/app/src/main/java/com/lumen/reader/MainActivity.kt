@@ -10,19 +10,19 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
@@ -44,22 +44,28 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.lumen.reader.core.MediaKind
 import com.lumen.reader.core.SourceStore
+import com.lumen.reader.ui.CatalogSeries
 import com.lumen.reader.ui.LumenColors
 import com.lumen.reader.ui.LumenTheme
 import com.lumen.reader.ui.ReaderScreen
 import com.lumen.reader.ui.SAMPLE_MANGA
 import com.lumen.reader.ui.SAMPLE_NOVEL
 import com.lumen.reader.ui.SampleSeries
+import com.lumen.reader.ui.SeriesChapter
+import com.lumen.reader.ui.SeriesDetailScreen
 import com.lumen.reader.ui.SettingsScreen
 import com.lumen.reader.ui.SourcesScreen
-import java.util.Calendar
+import com.lumen.reader.ui.sampleCatalogFromInstalled
 
 enum class Tab(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Default.List),
@@ -88,14 +94,34 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LumenAppRoot() {
+    val context = LocalContext.current
+    val store = remember { SourceStore(context) }
+
     var tab by remember { mutableStateOf(Tab.Home) }
     var sourcesOpen by remember { mutableStateOf(false) }
+    var detail by remember { mutableStateOf<CatalogSeries?>(null) }
     var reading by remember { mutableStateOf<SampleSeries?>(null) }
+    var libraryIds by remember { mutableStateOf(setOf<String>()) }
+    // Force recomposition after install by keying off installed size when returning
+    var installTick by remember { mutableStateOf(0) }
 
-    BackHandler(enabled = sourcesOpen || reading != null) {
+    val feed: List<CatalogSeries> = remember(installTick) {
+        val installed = store.getInstalled()
+        if (installed.isEmpty()) emptyList()
+        else installed.flatMap { src ->
+            val kind = if (src.kind == MediaKind.MANGA) "manga" else "novel"
+            sampleCatalogFromInstalled(src.name, kind)
+        }
+    }
+
+    BackHandler(enabled = sourcesOpen || detail != null || reading != null) {
         when {
             reading != null -> reading = null
-            sourcesOpen -> sourcesOpen = false
+            detail != null -> detail = null
+            sourcesOpen -> {
+                sourcesOpen = false
+                installTick++
+            }
         }
     }
 
@@ -104,8 +130,28 @@ fun LumenAppRoot() {
         return
     }
 
+    if (detail != null) {
+        SeriesDetailScreen(
+            series = detail!!,
+            onBack = { detail = null },
+            inLibrary = libraryIds.contains(detail!!.id),
+            onToggleLibrary = {
+                libraryIds =
+                    if (libraryIds.contains(detail!!.id)) libraryIds - detail!!.id
+                    else libraryIds + detail!!.id
+            },
+            onStartChapter = { ch ->
+                reading = chapterToReader(detail!!, ch)
+            }
+        )
+        return
+    }
+
     if (sourcesOpen) {
-        SourcesScreen(onBack = { sourcesOpen = false })
+        SourcesScreen(onBack = {
+            sourcesOpen = false
+            installTick++
+        })
         return
     }
 
@@ -140,156 +186,73 @@ fun LumenAppRoot() {
                 .padding(padding)
         ) {
             when (tab) {
-                Tab.Library -> LibraryTab(
+                Tab.Home -> HomeGrid(
+                    feed = feed,
                     onOpenSources = { sourcesOpen = true },
-                    onRead = { reading = it }
+                    onOpenSeries = { detail = it }
                 )
-                Tab.History -> HistoryTab(onRead = { reading = it })
-                Tab.Home -> HomeTab(
+                Tab.Library -> LibraryGrid(
+                    feed = feed.filter { libraryIds.contains(it.id) }.ifEmpty { feed.take(2) },
                     onOpenSources = { sourcesOpen = true },
-                    onRead = { reading = it }
+                    onOpenSeries = { detail = it }
                 )
-                Tab.Updates -> UpdatesTab(onRead = { reading = it })
+                Tab.History -> HistorySimple(onOpenSeries = { detail = feed.firstOrNull() })
+                Tab.Updates -> UpdatesSimple(onOpenSources = { sourcesOpen = true })
                 Tab.More -> SettingsScreen(onOpenSources = { sourcesOpen = true })
             }
         }
     }
 }
 
-@Composable
-private fun HomeTab(onOpenSources: () -> Unit, onRead: (SampleSeries) -> Unit) {
-    val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
-    val greeting = when {
-        hour < 12 -> "Good morning"
-        hour < 17 -> "Good afternoon"
-        else -> "Good evening"
-    }
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LumenColors.SoftBlack)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(modifier = Modifier.height(48.dp))
-        Text(
-            "Reading",
-            color = LumenColors.FrostedBlue.copy(alpha = 0.65f),
-            fontSize = 11.sp,
-            letterSpacing = 1.5.sp
+private fun chapterToReader(series: CatalogSeries, ch: SeriesChapter): SampleSeries {
+    val isNovel = series.kind.equals("novel", ignoreCase = true)
+    return if (isNovel) {
+        SAMPLE_NOVEL.copy(
+            id = series.id,
+            title = series.title,
+            author = series.author,
+            chapterTitle = ch.title,
+            pages = listOf(
+                series.description,
+                "You opened ${ch.title}. Scroll to continue.",
+                "Text loads from the installed novel source when the adapter is connected.",
+                "For now this is a readable placeholder so the flow is complete."
+            )
         )
-        Text(
-            greeting,
-            color = LumenColors.FrostWhite,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold
+    } else {
+        SAMPLE_MANGA.copy(
+            id = series.id,
+            title = series.title,
+            author = series.author,
+            chapterTitle = ch.title,
+            pages = listOf("Page 1", "Page 2", "Page 3", "Page 4", "Page 5")
         )
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(LumenColors.DeepGraphite)
-                    .clickable(onClick = onOpenSources)
-                    .padding(14.dp)
-            ) {
-                Text("Explore sources", color = LumenColors.MistGray, fontSize = 13.sp)
-            }
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(LumenColors.FrostedBlue)
-                    .clickable { onRead(SAMPLE_NOVEL) }
-                    .padding(horizontal = 16.dp, vertical = 14.dp)
-            ) {
-                Text("Open novel", color = LumenColors.SoftBlack, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            }
-        }
-
-        Spacer(modifier = Modifier.height(28.dp))
-        Text(
-            "Continue reading",
-            color = LumenColors.MistGray.copy(alpha = 0.75f),
-            fontSize = 11.sp,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        SeriesCard(
-            title = SAMPLE_NOVEL.title,
-            subtitle = SAMPLE_NOVEL.chapterTitle,
-            badge = "Novel",
-            onClick = { onRead(SAMPLE_NOVEL) }
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        SeriesCard(
-            title = SAMPLE_MANGA.title,
-            subtitle = SAMPLE_MANGA.chapterTitle,
-            badge = "Manga",
-            onClick = { onRead(SAMPLE_MANGA) }
-        )
-
-        Spacer(modifier = Modifier.height(28.dp))
-        Text(
-            "Sources",
-            color = LumenColors.MistGray.copy(alpha = 0.75f),
-            fontSize = 11.sp,
-            letterSpacing = 1.sp
-        )
-        Spacer(modifier = Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(LumenColors.DeepGraphite)
-                .clickable(onClick = onOpenSources)
-                .padding(18.dp)
-        ) {
-            Column {
-                Text("Install extensions", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    "Manga and novel sources from community indexes.",
-                    color = LumenColors.MistGray.copy(alpha = 0.75f),
-                    fontSize = 12.sp
-                )
-            }
-        }
-        Spacer(modifier = Modifier.height(100.dp))
     }
 }
 
 @Composable
-private fun LibraryTab(onOpenSources: () -> Unit, onRead: (SampleSeries) -> Unit) {
-    val context = LocalContext.current
-    val store = remember { SourceStore(context) }
-    val installed = remember { store.getInstalled() }
-
+private fun HomeGrid(
+    feed: List<CatalogSeries>,
+    onOpenSources: () -> Unit,
+    onOpenSeries: (CatalogSeries) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(LumenColors.SoftBlack)
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(48.dp))
-        Text("Library", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        Text("Home", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Your series and installed sources",
-            color = LumenColors.MistGray.copy(alpha = 0.7f),
+            if (feed.isEmpty()) "Install extensions to fill this feed"
+            else "From your installed sources",
+            color = LumenColors.MistGray.copy(alpha = 0.75f),
             fontSize = 12.sp
         )
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        SeriesCard(SAMPLE_NOVEL.title, SAMPLE_NOVEL.chapterTitle, "Novel") { onRead(SAMPLE_NOVEL) }
-        Spacer(modifier = Modifier.height(10.dp))
-        SeriesCard(SAMPLE_MANGA.title, SAMPLE_MANGA.chapterTitle, "Manga") { onRead(SAMPLE_MANGA) }
-
-        Spacer(modifier = Modifier.height(20.dp))
-        if (installed.isEmpty()) {
+        if (feed.isEmpty()) {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -298,16 +261,16 @@ private fun LibraryTab(onOpenSources: () -> Unit, onRead: (SampleSeries) -> Unit
                     .padding(20.dp)
             ) {
                 Column {
-                    Text("No sources yet", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
+                    Text("No extensions yet", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        "Add manga or novel sources to expand your library.",
-                        color = LumenColors.MistGray.copy(alpha = 0.75f),
+                        "Open More → Extensions (or Sources), install Keiyoushi or LNReader entries. Titles from those sources appear here.",
+                        color = LumenColors.MistGray.copy(alpha = 0.8f),
                         fontSize = 13.sp
                     )
                     Spacer(modifier = Modifier.height(14.dp))
                     Text(
-                        "Manage sources",
+                        "Install extensions",
                         color = LumenColors.SoftBlack,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
@@ -321,30 +284,21 @@ private fun LibraryTab(onOpenSources: () -> Unit, onRead: (SampleSeries) -> Unit
             }
         } else {
             Text(
-                "${installed.size} sources",
+                "Weekly featured",
                 color = LumenColors.MistGray.copy(alpha = 0.7f),
-                fontSize = 12.sp
+                fontSize = 11.sp,
+                letterSpacing = 1.sp
             )
             Spacer(modifier = Modifier.height(8.dp))
-            LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(installed, key = { it.id }) { src ->
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(LumenColors.DeepGraphite)
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(src.name, color = LumenColors.FrostWhite, fontSize = 14.sp)
-                            Text(
-                                "${src.lang} · v${src.version}",
-                                color = LumenColors.MistGray.copy(alpha = 0.7f),
-                                fontSize = 11.sp
-                            )
-                        }
-                    }
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(feed, key = { it.id }) { series ->
+                    CoverCard(series = series, onClick = { onOpenSeries(series) })
                 }
             }
         }
@@ -352,114 +306,133 @@ private fun LibraryTab(onOpenSources: () -> Unit, onRead: (SampleSeries) -> Unit
 }
 
 @Composable
-private fun HistoryTab(onRead: (SampleSeries) -> Unit) {
+private fun LibraryGrid(
+    feed: List<CatalogSeries>,
+    onOpenSources: () -> Unit,
+    onOpenSeries: (CatalogSeries) -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(LumenColors.SoftBlack)
-            .padding(horizontal = 20.dp)
+            .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(48.dp))
-        Text("Reading history", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        Text("Library", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
         Text(
-            "Pick up where you left off",
-            color = LumenColors.MistGray.copy(alpha = 0.7f),
+            "Series you added",
+            color = LumenColors.MistGray.copy(alpha = 0.75f),
             fontSize = 12.sp
         )
-        Spacer(modifier = Modifier.height(20.dp))
-        SeriesCard(SAMPLE_NOVEL.title, "Recently opened", "Novel") { onRead(SAMPLE_NOVEL) }
-        Spacer(modifier = Modifier.height(10.dp))
-        SeriesCard(SAMPLE_MANGA.title, "Recently opened", "Manga") { onRead(SAMPLE_MANGA) }
-    }
-}
-
-@Composable
-private fun UpdatesTab(onRead: (SampleSeries) -> Unit) {
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(LumenColors.SoftBlack)
-            .padding(horizontal = 20.dp)
-    ) {
-        Spacer(modifier = Modifier.height(48.dp))
-        Text(
-            "Recent updates",
-            color = LumenColors.FrostWhite,
-            fontSize = 26.sp,
-            fontWeight = FontWeight.SemiBold
-        )
-        Text(
-            "New chapters from your library",
-            color = LumenColors.MistGray.copy(alpha = 0.7f),
-            fontSize = 12.sp
-        )
-        Spacer(modifier = Modifier.height(20.dp))
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(18.dp))
-                .background(LumenColors.DeepGraphite)
-                .padding(20.dp)
-        ) {
-            Column {
-                Text("No new updates", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    "When sources have new chapters, they will appear here.",
-                    color = LumenColors.MistGray.copy(alpha = 0.75f),
-                    fontSize = 13.sp
-                )
-                Spacer(modifier = Modifier.height(14.dp))
-                Text(
-                    "Read a sample",
-                    color = LumenColors.FrostedBlue,
-                    fontSize = 13.sp,
-                    modifier = Modifier.clickable { onRead(SAMPLE_NOVEL) }
-                )
+        Spacer(modifier = Modifier.height(12.dp))
+        if (feed.isEmpty()) {
+            Text(
+                "Install sources to add titles",
+                color = LumenColors.FrostedBlue,
+                modifier = Modifier.clickable(onClick = onOpenSources)
+            )
+        } else {
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(2),
+                contentPadding = PaddingValues(bottom = 24.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                modifier = Modifier.fillMaxSize()
+            ) {
+                items(feed, key = { it.id }) { series ->
+                    CoverCard(series = series, onClick = { onOpenSeries(series) })
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SeriesCard(
-    title: String,
-    subtitle: String,
-    badge: String,
-    onClick: () -> Unit
-) {
-    Row(
+private fun CoverCard(series: CatalogSeries, onClick: () -> Unit) {
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
-            .background(LumenColors.DeepGraphite)
             .clickable(onClick = onClick)
-            .padding(14.dp),
-        verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(Color(0x227BC6FF)),
-            contentAlignment = Alignment.Center
+                .fillMaxWidth()
+                .aspectRatio(0.72f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(
+                    Brush.verticalGradient(
+                        listOf(Color(series.coverHint), LumenColors.DeepGraphite)
+                    )
+                ),
+            contentAlignment = Alignment.BottomStart
         ) {
             Text(
-                badge.take(1),
+                series.kind.uppercase(),
                 color = LumenColors.FrostedBlue,
-                fontWeight = FontWeight.Bold
+                fontSize = 10.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(10.dp)
             )
         }
-        Spacer(modifier = Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = LumenColors.FrostWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = LumenColors.MistGray.copy(alpha = 0.75f), fontSize = 12.sp)
-        }
+        Spacer(modifier = Modifier.height(6.dp))
         Text(
-            badge,
-            color = LumenColors.FrostedBlue.copy(alpha = 0.9f),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.SemiBold
+            series.title,
+            color = LumenColors.FrostWhite,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
+        )
+        Text(
+            series.genres.firstOrNull() ?: series.sourceName,
+            color = LumenColors.MistGray.copy(alpha = 0.75f),
+            fontSize = 11.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+
+@Composable
+private fun HistorySimple(onOpenSeries: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LumenColors.SoftBlack)
+            .padding(20.dp)
+    ) {
+        Spacer(modifier = Modifier.height(36.dp))
+        Text("History", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            "Resume last title",
+            color = LumenColors.FrostedBlue,
+            modifier = Modifier.clickable(onClick = onOpenSeries)
+        )
+    }
+}
+
+@Composable
+private fun UpdatesSimple(onOpenSources: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(LumenColors.SoftBlack)
+            .padding(20.dp)
+    ) {
+        Spacer(modifier = Modifier.height(36.dp))
+        Text("Updates", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            "New chapters from installed sources will appear here.",
+            color = LumenColors.MistGray,
+            fontSize = 13.sp
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            "Manage extensions",
+            color = LumenColors.FrostedBlue,
+            modifier = Modifier.clickable(onClick = onOpenSources)
         )
     }
 }
