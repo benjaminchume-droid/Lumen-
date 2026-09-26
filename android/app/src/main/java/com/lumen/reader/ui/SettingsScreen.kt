@@ -23,7 +23,6 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,7 +39,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumen.reader.BuildConfig
 import com.lumen.reader.core.SourceStore
-import com.lumen.reader.data.SupabaseClient
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -55,20 +53,11 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
 
-    var backend by remember { mutableStateOf<SupabaseClient.Health?>(null) }
-    var checkingBackend by remember { mutableStateOf(true) }
+    var themeMode by remember { mutableStateOf("dark") }
     var updateMsg by remember { mutableStateOf<String?>(null) }
     var checkingUpdate by remember { mutableStateOf(false) }
     val installedCount = store.installedIds().size
     val versionName = BuildConfig.VERSION_NAME
-
-    fun pingBackend() {
-        scope.launch {
-            checkingBackend = true
-            backend = SupabaseClient.checkHealth()
-            checkingBackend = false
-        }
-    }
 
     fun checkUpdate() {
         scope.launch {
@@ -82,84 +71,102 @@ fun SettingsScreen(
                     .build()
                 client.newCall(req).execute().use { resp ->
                     if (!resp.isSuccessful) {
-                        updateMsg = "Could not reach releases (${resp.code})"
+                        updateMsg = "Could not check right now"
                         return@use
                     }
                     val json = JSONObject(resp.body?.string().orEmpty())
                     val tag = json.optString("tag_name", "")
                     val current = "v$versionName"
                     updateMsg = if (tag.isNotBlank() && tag != current && !tag.endsWith(versionName)) {
-                        "Update available: $tag (you have $current)"
+                        "Update available: $tag"
                     } else {
-                        "Up to date ($current)"
+                        "You're up to date"
                     }
                 }
-            } catch (e: Exception) {
-                updateMsg = e.message ?: "Update check failed"
+            } catch (_: Exception) {
+                updateMsg = "Could not check right now"
             }
             checkingUpdate = false
         }
     }
 
-    LaunchedEffect(Unit) { pingBackend() }
-
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0C0F))
+            .background(LumenColors.SoftBlack)
             .verticalScroll(scroll)
             .padding(horizontal = 16.dp)
     ) {
         Spacer(modifier = Modifier.height(48.dp))
-        Text("Settings", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            "Settings",
+            color = LumenColors.FrostedBlue.copy(alpha = 0.7f),
+            fontSize = 11.sp,
+            letterSpacing = 1.5.sp
+        )
+        Text(
+            "System settings",
+            color = LumenColors.FrostWhite,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.SemiBold
+        )
         Text(
             "Lumen v$versionName",
-            color = Color(0xFF64748B),
+            color = LumenColors.MistGray.copy(alpha = 0.65f),
             fontSize = 12.sp
         )
 
         Spacer(modifier = Modifier.height(24.dp))
-        SectionLabel("Extensions")
+        SectionLabel("Account")
         SettingsRow(
-            icon = Icons.Default.List,
-            title = "Sources",
-            subtitle = "$installedCount installed · Keiyoushi + LNReader",
-            onClick = onOpenSources
+            icon = Icons.Default.Info,
+            title = "Signed in",
+            subtitle = "Session saved on this device"
         )
 
         Spacer(modifier = Modifier.height(20.dp))
-        SectionLabel("Backend")
+        SectionLabel("Customization")
         SettingsRow(
             icon = Icons.Default.Settings,
-            title = "Supabase Lumen",
-            subtitle = when {
-                checkingBackend -> "Checking connection…"
-                backend?.ok == true -> backend!!.message
-                backend != null -> "Error: ${backend!!.message}"
-                else -> "Not checked"
+            title = "Theme",
+            subtitle = when (themeMode) {
+                "light" -> "Light"
+                "amoled" -> "AMOLED"
+                else -> "Dark"
             },
             trailing = {
-                if (checkingBackend) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(18.dp),
-                        strokeWidth = 2.dp,
-                        color = Color(0xFF7BC6FF)
-                    )
-                } else {
-                    Text(
-                        if (backend?.ok == true) "ONLINE" else "RETRY",
-                        color = if (backend?.ok == true) Color(0xFF34D399) else Color(0xFF7BC6FF),
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.clickable { pingBackend() }
-                    )
+                Row {
+                    listOf("light", "dark", "amoled").forEach { mode ->
+                        val selected = themeMode == mode
+                        Text(
+                            mode.uppercase().take(5),
+                            color = if (selected) LumenColors.SoftBlack else LumenColors.MistGray,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier
+                                .padding(start = 4.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (selected) LumenColors.FrostedBlue else Color.Transparent)
+                                .clickable { themeMode = mode }
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
                 }
             }
         )
         SettingsRow(
-            icon = Icons.Default.Info,
-            title = "Project",
-            subtitle = "ryoewtikgwmyejrpjgnw · eu-west-1"
+            icon = Icons.Default.Settings,
+            title = "Reader defaults",
+            subtitle = "Font, size, and page layout"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
+        SectionLabel("Sources")
+        SettingsRow(
+            icon = Icons.Default.List,
+            title = "Extensions",
+            subtitle = if (installedCount == 0) "None installed yet" else "$installedCount installed",
+            onClick = onOpenSources
         )
 
         Spacer(modifier = Modifier.height(20.dp))
@@ -167,25 +174,43 @@ fun SettingsScreen(
         SettingsRow(
             icon = Icons.Default.Refresh,
             title = "Check for updates",
-            subtitle = updateMsg ?: "Idempotent — same release never re-installed",
+            subtitle = updateMsg ?: "Only installs a newer release once",
             onClick = { if (!checkingUpdate) checkUpdate() },
             trailing = {
                 if (checkingUpdate) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(18.dp),
                         strokeWidth = 2.dp,
-                        color = Color(0xFF7BC6FF)
+                        color = LumenColors.FrostedBlue
                     )
                 }
             }
         )
 
         Spacer(modifier = Modifier.height(20.dp))
+        SectionLabel("Legal")
+        SettingsRow(
+            icon = Icons.Default.Info,
+            title = "Privacy",
+            subtitle = "Data stays on your device unless you sign in"
+        )
+        SettingsRow(
+            icon = Icons.Default.Info,
+            title = "Terms",
+            subtitle = "Use extensions only where permitted"
+        )
+        SettingsRow(
+            icon = Icons.Default.Info,
+            title = "Open source notices",
+            subtitle = "Third-party indexes and libraries"
+        )
+
+        Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("About")
         SettingsRow(
             icon = Icons.Default.Info,
-            title = "Lumen Reading OS",
-            subtitle = "Extensions · Aggregator · Data-saver downloads"
+            title = "Lumen",
+            subtitle = "Read novels and manga from your sources"
         )
 
         Spacer(modifier = Modifier.height(100.dp))
@@ -196,7 +221,7 @@ fun SettingsScreen(
 private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
-        color = Color(0xFF64748B),
+        color = LumenColors.MistGray.copy(alpha = 0.55f),
         fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.sp,
@@ -217,16 +242,21 @@ private fun SettingsRow(
             .fillMaxWidth()
             .padding(bottom = 8.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFF12151C))
+            .background(LumenColors.DeepGraphite)
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Icon(icon, contentDescription = null, tint = Color(0xFF7BC6FF), modifier = Modifier.size(22.dp))
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = LumenColors.FrostedBlue.copy(alpha = 0.85f),
+            modifier = Modifier.size(22.dp)
+        )
         Spacer(modifier = Modifier.width(14.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-            Text(subtitle, color = Color(0xFF64748B), fontSize = 12.sp)
+            Text(title, color = LumenColors.FrostWhite, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+            Text(subtitle, color = LumenColors.MistGray.copy(alpha = 0.7f), fontSize = 12.sp)
         }
         trailing?.invoke()
     }
