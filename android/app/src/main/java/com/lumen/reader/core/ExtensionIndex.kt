@@ -176,8 +176,8 @@ object ExtensionIndexFetcher {
                     kind = MediaKind.NOVEL,
                     nsfw = o.optBoolean("nsfw", false),
                     iconUrl = o.optString("iconUrl").takeIf { it.isNotBlank() },
-                    site = o.optString("site").takeIf { it.isNotBlank() }
-                        ?: o.optString("url").takeIf { it.isNotBlank() },
+                    site = o.optString("site").takeIf { it.isNotBlank() },
+                    apkUrl = o.optString("url").takeIf { it.isNotBlank() },
                     repoId = "lnreader"
                 )
             )
