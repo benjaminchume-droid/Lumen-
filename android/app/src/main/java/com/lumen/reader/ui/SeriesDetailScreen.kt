@@ -38,6 +38,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 
 data class SeriesChapter(val id: String, val title: String, val number: Int, val dateLabel: String = "")
 
@@ -57,10 +58,7 @@ data class CatalogSeries(
     val sourceId: String = ""
 )
 
-fun sampleCatalogFromInstalled(sourceName: String, kind: String): List<CatalogSeries> {
-    // No demo catalog — home only shows real installed extension packages
-    return emptyList()
-}
+fun sampleCatalogFromInstalled(sourceName: String, kind: String): List<CatalogSeries> = emptyList()
 
 @Composable
 fun SeriesDetailScreen(
@@ -91,7 +89,15 @@ fun SeriesDetailScreen(
                         .background(Brush.verticalGradient(listOf(Color(series.coverHint), LumenColors.DeepGraphite))),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(series.title.take(1), color = LumenColors.FrostWhite.copy(alpha = 0.7f), fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    if (!series.coverUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = series.coverUrl,
+                            contentDescription = series.title,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Text(series.title.take(1), color = LumenColors.FrostWhite.copy(alpha = 0.7f), fontSize = 28.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column(modifier = Modifier.weight(1f)) {
@@ -138,12 +144,8 @@ fun SeriesDetailScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("${series.chapters.size} chapters", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
-                Text(
-                    "Download",
-                    color = LumenColors.FrostedBlue,
-                    fontSize = 13.sp,
-                    modifier = Modifier.clickable { showBulk = !showBulk }
-                )
+                Text("Download", color = LumenColors.FrostedBlue, fontSize = 13.sp,
+                    modifier = Modifier.clickable { showBulk = !showBulk })
             }
             if (showBulk) {
                 Row(
@@ -151,40 +153,22 @@ fun SeriesDetailScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(5, 10, 25, 50, 100).forEach { n ->
-                        Text(
-                            "$n",
-                            color = LumenColors.SoftBlack,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
+                        Text("$n", color = LumenColors.SoftBlack, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
-                                .clickable {
-                                    onDownloadChapters(series.chapters.take(n))
-                                    showBulk = false
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                                .clickable { onDownloadChapters(series.chapters.take(n)); showBulk = false }
+                                .padding(horizontal = 10.dp, vertical = 6.dp))
                     }
-                    Text(
-                        "All",
-                        color = LumenColors.SoftBlack,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold,
+                    Text("All", color = LumenColors.SoftBlack, fontSize = 12.sp, fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
-                            .clickable {
-                                onDownloadChapters(series.chapters)
-                                showBulk = false
-                            }
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
+                            .clickable { onDownloadChapters(series.chapters); showBulk = false }
+                            .padding(horizontal = 10.dp, vertical = 6.dp))
                 }
             }
             Spacer(modifier = Modifier.height(8.dp))
             LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 itemsIndexed(series.chapters) { _, ch ->
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
                             .clickable(interactionSource = noRipple, indication = null) { onStartChapter(ch) }
                             .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
