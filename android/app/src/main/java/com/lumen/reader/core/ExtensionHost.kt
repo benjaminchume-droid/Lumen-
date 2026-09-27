@@ -7,8 +7,8 @@ import dalvik.system.PathClassLoader
 
 /**
  * Mihon-style extension discovery for installed Keiyoushi packages.
- * Discovers packages with tachiyomi.extension metadata and builds PathClassLoader.
- * Live listings use CatalogService + homeUrl until full Source API stubs are shipped.
+ * Discovers packages with tachiyomi.extension metadata and builds PathClassLoader
+ * (same metadata keys as mihon ExtensionLoader).
  */
 class ExtensionHost(private val context: Context) {
 
@@ -17,7 +17,8 @@ class ExtensionHost(private val context: Context) {
         val name: String,
         val sourceDir: String,
         val classNames: List<String>,
-        val classLoader: PathClassLoader?
+        val classLoader: PathClassLoader?,
+        val libVersion: String? = null
     )
 
     fun findInstalledExtensions(): List<LoadedExt> {
@@ -43,6 +44,8 @@ class ExtensionHost(private val context: Context) {
             val classes = cls.split(';').map { it.trim() }.filter { it.isNotBlank() }.map {
                 if (it.startsWith(".")) pi.packageName + it else it
             }
+            val lib = meta.getString("tachiyomix.extensionLib")
+                ?: meta.getString("tachiyomi.extension.lib")
             val loader = try {
                 PathClassLoader(app.sourceDir, context.classLoader)
             } catch (_: Exception) {
@@ -54,7 +57,8 @@ class ExtensionHost(private val context: Context) {
                     name = name,
                     sourceDir = app.sourceDir.orEmpty(),
                     classNames = classes,
-                    classLoader = loader
+                    classLoader = loader,
+                    libVersion = lib
                 )
             )
         }
