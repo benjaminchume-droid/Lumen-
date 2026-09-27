@@ -56,31 +56,31 @@ import com.lumen.reader.core.SourceStore
 import kotlinx.coroutines.launch
 
 @Composable
-fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
+fun SourcesScreen(onBack: () -> Unit) {
     BackHandler(onBack = onBack)
     val context = LocalContext.current
     val store = remember { SourceStore(context) }
     val installer = remember { ExtensionInstaller(context) }
+    val progress by installer.progress.collectAsState()
     val scope = rememberCoroutineScope()
-    val progressMap by installer.progress.collectAsState()
-    var query by remember { mutableStateOf("") }
-    var loading by remember { mutableStateOf(true) }
+
     var entries by remember { mutableStateOf<List<IndexEntry>>(emptyList()) }
     var installed by remember { mutableStateOf(store.getInstalled()) }
     var filter by remember { mutableStateOf("All") }
+    var query by remember { mutableStateOf("") }
+    var loading by remember { mutableStateOf(true) }
     var status by remember { mutableStateOf<String?>(null) }
 
     fun reload() {
         scope.launch {
             loading = true
-            status = null
-            entries = runCatching { ExtensionIndexFetcher.fetchAll() }
-                .onFailure { status = it.message }
-                .getOrDefault(emptyList())
+            entries = runCatching { ExtensionIndexFetcher.fetchAll() }.getOrDefault(emptyList())
             installed = store.getInstalled()
             loading = false
+            status = "${entries.size} sources (Keiyoushi + LNReader)"
         }
     }
+
     LaunchedEffect(Unit) { reload() }
 
     val filtered = remember(entries, query, filter, installed) {
@@ -92,45 +92,44 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
         }
         if (query.isBlank()) base
         else base.filter {
-            it.name.contains(query, true) || it.lang.contains(query, true) || it.id.contains(query, true)
+            it.name.contains(query, true) || it.lang.contains(query, true) ||
+                (it.site?.contains(query, true) == true) || (it.pkg?.contains(query, true) == true)
         }
     }
 
-    Column(Modifier.fillMaxSize().background(Color(0xFF0A0C0F)).padding(horizontal = 16.dp)) {
-        Spacer(Modifier.height(if (embedded) 12.dp else 48.dp))
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onBack) { Text("← Back", color = Color(0xFF7BC6FF)) }
+    Column(
+        Modifier.fillMaxSize().background(Color(0xFF0B0E14)).padding(horizontal = 12.dp)
+    ) {
+        Spacer(Modifier.height(40.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = onBack) { Text("←", color = Color(0xFF7BC6FF), fontSize = 20.sp) }
             Column(Modifier.weight(1f)) {
-                Text("Sources", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
-                Text("Manga · Keiyoushi · Novel · LNReader", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("Sources", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(status ?: "Full Mihon + LNReader indexes", color = Color(0xFF94A3B8), fontSize = 12.sp)
             }
             IconButton(onClick = { reload() }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color(0xFF7BC6FF))
             }
         }
-        status?.let {
-            Text(it, color = Color(0xFFF87171), fontSize = 12.sp, modifier = Modifier.padding(vertical = 4.dp))
-        }
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
-            placeholder = { Text("Search sources…", color = Color(0xFF64748B)) },
-            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF7BC6FF)) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            placeholder = { Text("Search all sources…", color = Color(0xFF64748B)) },
             singleLine = true,
-            shape = RoundedCornerShape(16.dp),
+            leadingIcon = { Icon(Icons.Default.Search, null, tint = Color(0xFF64748B)) },
+            shape = RoundedCornerShape(12.dp),
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = Color(0xFF7BC6FF),
                 unfocusedBorderColor = Color(0x22FFFFFF),
                 focusedTextColor = Color.White,
                 unfocusedTextColor = Color.White,
                 cursorColor = Color(0xFF7BC6FF),
-                focusedContainerColor = Color(0xFF12151C),
-                unfocusedContainerColor = Color(0xFF12151C)
+                focusedContainerColor = Color(0xFF151A22),
+                unfocusedContainerColor = Color(0xFF151A22)
             )
         )
-        Spacer(Modifier.height(10.dp))
-        Row {
+        Row(Modifier.padding(bottom = 8.dp)) {
             listOf("All", "Manga", "Novel", "Installed").forEach { f ->
                 FilterChip(
                     selected = filter == f,
@@ -138,34 +137,38 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                     label = { Text(f, fontSize = 12.sp) },
                     colors = FilterChipDefaults.filterChipColors(
                         selectedContainerColor = Color(0xFF7BC6FF),
-                        selectedLabelColor = Color(0xFF0A0C0F),
-                        containerColor = Color(0xFF161A22),
+                        selectedLabelColor = Color(0xFF0B0E14),
+                        containerColor = Color(0xFF151A22),
                         labelColor = Color(0xFF94A3B8)
                     ),
                     modifier = Modifier.padding(end = 6.dp)
                 )
             }
         }
-        Spacer(Modifier.height(8.dp))
         if (loading) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color(0xFF7BC6FF))
             }
         } else {
             Text("${filtered.size} extensions", color = Color(0xFF64748B), fontSize = 11.sp)
+            Spacer(Modifier.height(6.dp))
             LazyColumn(Modifier.fillMaxSize()) {
                 items(filtered, key = { it.id }) { entry ->
-                    val prog = progressMap[entry.id]
-                    val pkgInstalled = installer.isPackageInstalled(entry.pkg)
-                    val marked = installed.any { it.id == entry.id } || pkgInstalled
+                    val prog = progress[entry.id]
                     val downloading = prog?.phase == InstallPhase.DOWNLOADING || prog?.phase == InstallPhase.INSTALLING
+                    val pkgInstalled = entry.pkg != null && installer.isPackageInstalled(entry.pkg)
+                    val marked = installed.any { it.id == entry.id } || pkgInstalled
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp),
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 6.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFF151A22))
+                            .padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Box(
-                            Modifier.size(40.dp).clip(RoundedCornerShape(8.dp))
-                                .background(if (entry.kind == MediaKind.MANGA) Color(0xFF1E2A3A) else Color(0xFF2A1E3A)),
+                            Modifier.size(40.dp).clip(RoundedCornerShape(10.dp)).background(Color(0xFF1E293B)),
                             contentAlignment = Alignment.Center
                         ) {
                             Text(entry.name.take(1).uppercase(), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
@@ -175,8 +178,10 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                             Text(entry.name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                             Text(
                                 buildString {
-                                    append(entry.lang.uppercase())
+                                    append(entry.lang)
                                     append(" · ")
+                                    append(if (entry.kind == MediaKind.MANGA) "Manga" else "Novel")
+                                    append(" · v")
                                     append(entry.version)
                                     append(" @")
                                     append(if (entry.repoId == "keiyoushi") "Keiyoushi" else "LNReader")
@@ -223,8 +228,10 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                             IconButton(onClick = {
                                 scope.launch {
                                     val apk = entry.apkUrl
-                                    // LNReader plugins are compiled JS, not Android APKs
                                     if (apk.isNullOrBlank() || apk.endsWith(".js") || entry.repoId == "lnreader") {
+                                        if (!apk.isNullOrBlank() && (apk.endsWith(".js") || entry.repoId == "lnreader")) {
+                                            installer.downloadAndInstall(entry)
+                                        }
                                         store.install(entry)
                                         installed = store.getInstalled()
                                         status = "Enabled ${entry.name} · ${entry.site ?: "no site"}"
