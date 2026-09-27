@@ -55,38 +55,8 @@ data class CatalogSeries(
 )
 
 fun sampleCatalogFromInstalled(sourceName: String, kind: String): List<CatalogSeries> {
-    val isManga = kind.equals("manga", ignoreCase = true)
-    val src = sourceName.ifBlank { "Source" }
-    return if (isManga) {
-        listOf(
-            CatalogSeries("manga:$src:global-martial", "Global Martial Arts", "Various", src, "manga",
-                "Rebirth is just a starting point from reaching the peak.",
-                listOf("Action", "Adventure", "Manhua"), "Ongoing",
-                (1..24).map { SeriesChapter("c$it", "Chapter $it", it, if (it > 20) "New" else "") }.reversed(), 0xFF1E3A5F),
-            CatalogSeries("manga:$src:martial-peak", "Martial Peak", "Momo", src, "manga",
-                "Climb the martial path chapter by chapter.",
-                listOf("Action", "Fantasy"), "Ongoing",
-                (1..18).map { SeriesChapter("c$it", "Chapter $it", it) }.reversed(), 0xFF3A2A1E),
-            CatalogSeries("manga:$src:sweet-guy", "Sweet Guy", "Source", src, "manga",
-                "Popular title from $src.", listOf("Drama", "Romance"), "Ongoing",
-                (1..12).map { SeriesChapter("c$it", "Chapter $it", it) }.reversed(), 0xFF4A2A3A)
-        )
-    } else {
-        listOf(
-            CatalogSeries("novel:$src:lord-truth", "Lord of the Truth", "TruthTeller", src, "novel",
-                "One morning in Jura city market. A large city ruled by one of the largest families of the duchy.",
-                listOf("Fantasy", "Adventure"), "Ongoing",
-                (1..20).map { SeriesChapter("c$it", "Chapter $it", it, if (it > 17) "New" else "") }.reversed(), 0xFF2A3A2E),
-            CatalogSeries("novel:$src:quiet-hours", "Quiet Hours", "Lumen Library", src, "novel",
-                "A soft morning light and pages that slow the day.",
-                listOf("Literary"), "Ongoing",
-                (1..8).map { SeriesChapter("c$it", "Chapter $it", it) }.reversed(), 0xFF1B2838),
-            CatalogSeries("novel:$src:domain-ruin", "Domain of Ruin", "Source", src, "novel",
-                "The Domain of Ruin expanded over them and instantly swallowed all twelve sons at once.",
-                listOf("Dark Fantasy"), "Ongoing",
-                (1..15).map { SeriesChapter("c$it", "Chapter $it", it) }.reversed(), 0xFF2A1E28)
-        )
-    }
+    // No demo catalog — home only shows real installed extension packages
+    return emptyList()
 }
 
 @Composable
@@ -149,50 +119,70 @@ fun SeriesDetailScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(series.description, color = LumenColors.LiquidSilver.copy(alpha = 0.85f), fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(modifier = Modifier.height(16.dp))
-            Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Chapters · ${series.chapters.size}", color = LumenColors.FrostWhite, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
-                IconButton(onClick = { showBulk = !showBulk }) {
-                    Icon(Icons.Default.Download, contentDescription = "Download", tint = LumenColors.FrostedBlue)
+            Text(series.description, color = LumenColors.MistGray, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(modifier = Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                series.genres.take(4).forEach { g ->
+                    Text(g, color = LumenColors.FrostedBlue, fontSize = 11.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x227BC6FF)).padding(horizontal = 8.dp, vertical = 4.dp))
                 }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("${series.chapters.size} chapters", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
+                Text(
+                    "Download",
+                    color = LumenColors.FrostedBlue,
+                    fontSize = 13.sp,
+                    modifier = Modifier.clickable { showBulk = !showBulk }
+                )
             }
             if (showBulk) {
-                Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     listOf(5, 10, 25, 50, 100).forEach { n ->
-                        val count = n.coerceAtMost(series.chapters.size)
-                        Text("$count", color = LumenColors.FrostedBlue, fontSize = 12.sp,
-                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x227BC6FF))
-                                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                    onDownloadChapters(series.chapters.take(count)); showBulk = false
-                                }.padding(horizontal = 10.dp, vertical = 6.dp))
+                        Text(
+                            "$n",
+                            color = LumenColors.SoftBlack,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
+                                .clickable { onDownloadChapters(series.chapters.take(n)) }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
                     }
-                    Text("All", color = LumenColors.FrostedBlue, fontSize = 12.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x227BC6FF))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                                onDownloadChapters(series.chapters); showBulk = false
-                            }.padding(horizontal = 10.dp, vertical = 6.dp))
+                    Text(
+                        "All",
+                        color = LumenColors.SoftBlack,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
+                            .clickable { onDownloadChapters(series.chapters) }
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
                 }
             }
-            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 itemsIndexed(series.chapters) { _, ch ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp))
-                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onStartChapter(ch) }
-                            .padding(horizontal = 10.dp, vertical = 12.dp),
+                        modifier = Modifier.fillMaxWidth().clickable { onStartChapter(ch) }.padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(ch.title, color = LumenColors.FrostWhite, fontSize = 14.sp)
-                            if (ch.dateLabel.isNotBlank()) Text(ch.dateLabel, color = LumenColors.FrostedBlue, fontSize = 11.sp)
+                            if (ch.dateLabel.isNotBlank()) Text(ch.dateLabel, color = LumenColors.MistGray, fontSize = 11.sp)
                         }
-                        IconButton(onClick = { onDownloadChapters(listOf(ch)) }, modifier = Modifier.size(36.dp)) {
-                            Icon(Icons.Default.Download, contentDescription = "Download chapter", tint = LumenColors.MistGray, modifier = Modifier.size(18.dp))
+                        IconButton(onClick = { onDownloadChapters(listOf(ch)) }) {
+                            Icon(Icons.Default.Download, contentDescription = "Download", tint = LumenColors.MistGray)
                         }
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Read", tint = LumenColors.FrostedBlue, modifier = Modifier.size(20.dp))
                     }
                 }
-                item { Spacer(modifier = Modifier.height(40.dp)) }
             }
         }
     }
