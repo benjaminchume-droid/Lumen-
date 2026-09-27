@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -211,9 +212,22 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                                 color = Color(0xFFA78BFA),
                                 strokeWidth = 2.dp
                             )
+                        } else if (marked || prog?.phase == InstallPhase.INSTALLED) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Installed",
+                                tint = Color(0xFF34D399),
+                                modifier = Modifier.size(22.dp).padding(end = 8.dp)
+                            )
                         } else {
                             IconButton(onClick = {
                                 scope.launch {
+                                    if (entry.apkUrl.isNullOrBlank()) {
+                                        store.install(entry)
+                                        installed = store.getInstalled()
+                                        status = "Enabled ${entry.name} (plugin)"
+                                        return@launch
+                                    }
                                     if (!installer.canRequestPackageInstalls()) {
                                         status = "Allow install unknown apps for Lumen"
                                         context.startActivity(installer.openUnknownSourcesSettings())
@@ -236,8 +250,8 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                             }) {
                                 Icon(
                                     imageVector = Icons.Default.Download,
-                                    contentDescription = if (marked) "Reinstall" else "Download",
-                                    tint = if (marked || prog?.phase == InstallPhase.INSTALLED) Color(0xFF34D399) else Color(0xFF94A3B8)
+                                    contentDescription = "Download",
+                                    tint = Color(0xFF94A3B8)
                                 )
                             }
                         }
