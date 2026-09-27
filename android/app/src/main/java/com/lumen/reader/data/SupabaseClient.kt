@@ -1,5 +1,6 @@
 package com.lumen.reader.data
 
+import com.lumen.reader.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -10,13 +11,10 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
-/**
- * Lightweight Supabase PostgREST client for Lumen project ryoewtikgwmyejrpjgnw.
- */
 object SupabaseClient {
-    const val URL = "https://ryoewtikgwmyejrpjgnw.supabase.co"
-    const val ANON_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJ5b2V3dGlrZ3dteWVqcnBqZ253Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY3MDg3MzYsImV4cCI6MjEwMjI4NDczNn0.KNa80UeXpIuPlVEt5sFIq4TyYtIc2ykWe-k24m7O7Pg"
+
+    private val URL: String get() = BuildConfig.SUPABASE_URL
+    private val ANON_KEY: String get() = BuildConfig.SUPABASE_ANON_KEY
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -25,11 +23,11 @@ object SupabaseClient {
 
     private val jsonMedia = "application/json".toMediaType()
 
-    data class Health(
-        val ok: Boolean,
-        val message: String,
-        val seriesCount: Int = 0
-    )
+    @Volatile
+    var accessToken: String? = null
+        private set
+
+    data class Health(val ok: Boolean, val message: String, val seriesCount: Int = 0)
 
     suspend fun checkHealth(): Health = withContext(Dispatchers.IO) {
         try {
@@ -38,26 +36,105 @@ object SupabaseClient {
                 .header("apikey", ANON_KEY)
                 .header("Authorization", "Bearer $ANON_KEY")
                 .header("Accept", "application/json")
-                .get()
-                .build()
+                .get().build()
             client.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful) {
-                    val count = try {
-                        JSONArray(body).length()
-                    } catch (_: Exception) {
-                        0
-                    }
+                    val count = try { JSONArray(body).length() } catch (_: Exception) { 0 }
                     Health(true, "Connected to Lumen Supabase", count)
                 } else if (resp.code in listOf(200, 206, 404, 406) || body.contains("PGRST")) {
                     Health(true, "Supabase reachable (schema pending or empty)", 0)
-                } else {
-                    Health(false, "HTTP ${resp.code}: ${body.take(120)}")
-                }
+                } else Health(false, "HTTP ${resp.code}: ${body.take(120)}")
             }
         } catch (e: Exception) {
             Health(false, e.message ?: "Network error")
         }
+    }
+
+    suspend fun signUp(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().put("email", email).put("password", password).toString()
+            val req = Request.Builder()
+                .url("$URL/auth/v1/signup")
+                .header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json")
+                .post(payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) {
+                    val tok = JSONObject(body).optString("access_token").ifBlank {
+                        JSONObject(body).optJSONObject("session")?.optString("access_token").orEmpty()
+                    }
+                    if (tok.isNotBlank()) accessToken = tok
+                    true
+                } else false
+            }
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun signIn(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().put("email", email).put("password", password).toString()
+            val req = Request.Builder()
+                .url("$URL/auth/v1/token?grant_type=password")
+                .header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json")
+                .post(payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) {
+                    val tok = JSONObject(body).optString("access_token")
+                    if (tok.isNotBlank()) accessToken = tok
+                    true
+                } else false
+            }
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun sendOtp(email: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().put("email", email).put("create_user", true).toString()
+            val req = Request.Builder()
+                .url("$URL/auth/v1/otp")
+                .header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json")
+                .post(payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { resp -> resp.isSuccessful || resp.code == 429 }
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun verifyOtp(email: String, token: String): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val payload = JSONObject().put("email", email).put("token", token).put("type", "email").toString()
+            val req = Request.Builder()
+                .url("$URL/auth/v1/verify")
+                .header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json")
+                .post(payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (resp.isSuccessful) {
+                    val tok = JSONObject(body).optString("access_token")
+                    if (tok.isNotBlank()) accessToken = tok
+                    true
+                } else false
+            }
+        } catch (_: Exception) { false }
+    }
+
+    suspend fun saveInterests(interests: String): Boolean = withContext(Dispatchers.IO) {
+        val token = accessToken ?: ANON_KEY
+        try {
+            val payload = JSONObject().put("interests", interests).put("updated_at", java.time.Instant.now().toString()).toString()
+            val req = Request.Builder()
+                .url("$URL/rest/v1/profiles")
+                .header("apikey", ANON_KEY)
+                .header("Authorization", "Bearer $token")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "resolution=merge-duplicates")
+                .post(payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { it.isSuccessful || it.code in 200..299 }
+        } catch (_: Exception) { false }
     }
 
     suspend fun listSeries(limit: Int = 20): List<JSONObject> = withContext(Dispatchers.IO) {
@@ -67,15 +144,12 @@ object SupabaseClient {
                 .header("apikey", ANON_KEY)
                 .header("Authorization", "Bearer $ANON_KEY")
                 .header("Accept", "application/json")
-                .get()
-                .build()
+                .get().build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext emptyList()
                 val arr = JSONArray(resp.body?.string().orEmpty())
                 (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
             }
-        } catch (_: Exception) {
-            emptyList()
-        }
+        } catch (_: Exception) { emptyList() }
     }
 }
