@@ -68,6 +68,7 @@ fun LumenAppRoot() {
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(Tab.Home) }
     var sourcesOpen by remember { mutableStateOf(false) }
+    var authOpen by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<CatalogSeries?>(null) }
     var reading by remember { mutableStateOf<SampleSeries?>(null) }
     var libraryIds by remember { mutableStateOf(setOf<String>()) }
@@ -97,7 +98,7 @@ fun LumenAppRoot() {
                 return@launch
             }
             val live = withContext(Dispatchers.IO) {
-                CatalogService.fetchPopularFromInstalled(withSite, perSource = 10)
+                CatalogService.fetchPopularFromInstalled(withSite, perSource = 80)
             }
             feed = live.map { ls ->
                 CatalogSeries(
@@ -120,10 +121,11 @@ fun LumenAppRoot() {
 
     LaunchedEffect(installTick) { loadFeed() }
 
-    BackHandler(enabled = sourcesOpen || detail != null || reading != null) {
+    BackHandler(enabled = authOpen || sourcesOpen || detail != null || reading != null) {
         when {
             reading != null -> reading = null
             detail != null -> detail = null
+            authOpen -> authOpen = false
             sourcesOpen -> { sourcesOpen = false; installTick++ }
         }
     }
@@ -178,6 +180,10 @@ fun LumenAppRoot() {
                 }
             }
         )
+        return
+    }
+    if (authOpen) {
+        AuthScreen(onBack = { authOpen = false }, onComplete = { authOpen = false })
         return
     }
     if (sourcesOpen) {
@@ -244,7 +250,11 @@ fun LumenAppRoot() {
                             modifier = Modifier.clickable { sourcesOpen = true }.padding(top = 12.dp))
                     }
                 }
-                Tab.More -> SettingsScreen(onOpenSources = { sourcesOpen = true })
+                Tab.More -> SettingsScreen(
+                    onOpenSources = { sourcesOpen = true },
+                    onSignIn = { authOpen = true },
+                    onGuest = { }
+                )
             }
         }
     }
