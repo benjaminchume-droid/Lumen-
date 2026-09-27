@@ -35,6 +35,7 @@ data class InstallProgress(
         }
 }
 
+/** Downloads Keiyoushi APKs and LNReader JS plugins with progress. */
 class ExtensionInstaller(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
@@ -46,9 +47,8 @@ class ExtensionInstaller(private val context: Context) {
     private val _progress = MutableStateFlow<Map<String, InstallProgress>>(emptyMap())
     val progress: StateFlow<Map<String, InstallProgress>> = _progress.asStateFlow()
 
-    private val extDir: File by lazy {
-        File(context.cacheDir, "extensions").also { it.mkdirs() }
-    }
+    private val extDir: File by lazy { File(context.cacheDir, "extensions").also { it.mkdirs() } }
+    private val pluginDir: File by lazy { File(context.filesDir, "plugins").also { it.mkdirs() } }
 
     fun isPackageInstalled(pkg: String?): Boolean {
         if (pkg.isNullOrBlank()) return false
@@ -60,9 +60,12 @@ class ExtensionInstaller(private val context: Context) {
                 context.packageManager.getPackageInfo(pkg, 0)
             }
             true
-        } catch (_: Exception) {
-            false
-        }
+        } catch (_: Exception) { false }
+    }
+
+    fun isJsPluginInstalled(entry: IndexEntry): Boolean {
+        val f = pluginFile(entry)
+        return f.exists() && f.length() > 20
     }
 
     fun canRequestPackageInstalls(): Boolean {
@@ -87,9 +90,18 @@ class ExtensionInstaller(private val context: Context) {
         return File(extDir, "$safe-v${entry.version}.apk")
     }
 
+    private fun pluginFile(entry: IndexEntry): File {
+        val safe = entry.id.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+        return File(pluginDir, "$safe.js")
+    }
+
     private fun setProgress(id: String, update: (InstallProgress) -> InstallProgress) {
         val cur = _progress.value[id] ?: InstallProgress(entryId = id)
         _progress.value = _progress.value + (id to update(cur))
+    }
+
+    private fun isJsUrl(url: String, entry: IndexEntry): Boolean {
+        return url.endsWith(".js", true) || entry.kind == MediaKind.NOVEL || entry.repoId == "lnreader"
     }
 
     suspend fun downloadAndInstall(entry: IndexEntry): Result<File> = withContext(Dispatchers.IO) {
@@ -101,20 +113,33 @@ class ExtensionInstaller(private val context: Context) {
             }
             return@withContext Result.success(apkFileFor(entry))
         }
-        val apkUrl = entry.apkUrl
-        if (apkUrl.isNullOrBlank()) {
-            setProgress(id) { it.copy(phase = InstallPhase.FAILED, message = "No APK URL in index") }
-            return@withContext Result.failure(IllegalStateException("No apkUrl for ${entry.name}"))
+        if (entry.kind == MediaKind.NOVEL && isJsPluginInstalled(entry)) {
+            setProgress(id) {
+                it.copy(phase = InstallPhase.INSTALLED, message = "Plugin on device", bytesDone = 1, bytesTotal = 1)
+            }
+            return@withContext Result.success(pluginFile(entry))
         }
 
-        val dest = apkFileFor(entry)
-        if (dest.exists() && dest.length() > 10_000L) {
+        val url = entry.apkUrl
+        if (url.isNullOrBlank()) {
+            if (entry.kind == MediaKind.NOVEL && !entry.site.isNullOrBlank()) {
+                setProgress(id) {
+                    it.copy(phase = InstallPhase.INSTALLED, message = "Enabled (site)", bytesDone = 1, bytesTotal = 1)
+                }
+                return@withContext Result.success(File(pluginDir, "${entry.id}.enabled"))
+            }
+            setProgress(id) { it.copy(phase = InstallPhase.FAILED, message = "No download URL in index") }
+            return@withContext Result.failure(IllegalStateException("No url for ${entry.name}"))
+        }
+
+        val dest = if (isJsUrl(url, entry)) pluginFile(entry) else apkFileFor(entry)
+        if (dest.exists() && dest.length() > 20L) {
             setProgress(id) {
                 it.copy(
-                    phase = InstallPhase.READY,
+                    phase = if (isJsUrl(url, entry)) InstallPhase.INSTALLED else InstallPhase.READY,
                     bytesDone = dest.length(),
                     bytesTotal = dest.length(),
-                    message = "Cached",
+                    message = if (isJsUrl(url, entry)) "Plugin ready" else "Cached",
                     localApk = dest
                 )
             }
@@ -123,10 +148,7 @@ class ExtensionInstaller(private val context: Context) {
 
         setProgress(id) { it.copy(phase = InstallPhase.DOWNLOADING, message = "Downloading…", bytesDone = 0, bytesTotal = 0) }
         try {
-            val req = Request.Builder()
-                .url(apkUrl)
-                .header("User-Agent", "LumenReader/1.5")
-                .build()
+            val req = Request.Builder().url(url).header("User-Agent", "LumenReader/1.6").build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
                     setProgress(id) { it.copy(phase = InstallPhase.FAILED, message = "HTTP ${resp.code}") }
@@ -162,12 +184,13 @@ class ExtensionInstaller(private val context: Context) {
                 if (dest.exists()) dest.delete()
                 tmp.renameTo(dest)
             }
+            val js = isJsUrl(url, entry)
             setProgress(id) {
                 it.copy(
-                    phase = InstallPhase.READY,
+                    phase = if (js) InstallPhase.INSTALLED else InstallPhase.READY,
                     bytesDone = dest.length(),
                     bytesTotal = dest.length(),
-                    message = "Ready to install",
+                    message = if (js) "Plugin installed" else "Ready to install",
                     localApk = dest
                 )
             }
@@ -179,11 +202,7 @@ class ExtensionInstaller(private val context: Context) {
     }
 
     fun launchInstall(apk: File): Intent {
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.fileprovider",
-            apk
-        )
+        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", apk)
         return Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
