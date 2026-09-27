@@ -22,14 +22,17 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
 import com.lumen.reader.core.CatalogService
 import com.lumen.reader.core.ExtensionInstaller
 import com.lumen.reader.core.IndexEntry
+import com.lumen.reader.core.SecureDownloadStore
 import com.lumen.reader.core.SourceStore
 import com.lumen.reader.ui.*
 import kotlinx.coroutines.Dispatchers
@@ -61,6 +64,7 @@ fun LumenAppRoot() {
     val context = LocalContext.current
     val store = remember { SourceStore(context) }
     val installer = remember { ExtensionInstaller(context) }
+    val dlStore = remember { SecureDownloadStore(context) }
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(Tab.Home) }
     var sourcesOpen by remember { mutableStateOf(false) }
@@ -86,7 +90,7 @@ fun LumenAppRoot() {
             feedLoading = true
             feedError = null
             refreshInstalled()
-            val withSite = installed.filter { !it.site.isNullOrBlank() }
+            val withSite = installed.filter { !it.site.isNullOrBlank() && it.site!!.startsWith("http") }
             if (withSite.isEmpty()) {
                 feed = emptyList()
                 feedLoading = false
@@ -141,7 +145,8 @@ fun LumenAppRoot() {
                 history = listOf(series) + history.filter { it.id != series.id }
                 scope.launch {
                     val isNovel = series.kind.equals("novel", ignoreCase = true)
-                    val pages = withContext(Dispatchers.IO) {
+                    val cached = dlStore.loadChapter(ch.id)
+                    val pages = cached ?: withContext(Dispatchers.IO) {
                         CatalogService.fetchChapterPages(ch.id, isNovel)
                     }
                     reading = if (isNovel) {
@@ -159,7 +164,19 @@ fun LumenAppRoot() {
                     }
                 }
             },
-            onDownloadChapters = { }
+            onDownloadChapters = { chapters ->
+                scope.launch {
+                    val series = detail ?: return@launch
+                    val isNovel = series.kind.equals("novel", ignoreCase = true)
+                    for (ch in chapters) {
+                        if (dlStore.isDownloaded(ch.id)) continue
+                        val pages = withContext(Dispatchers.IO) {
+                            CatalogService.fetchChapterPages(ch.id, isNovel)
+                        }
+                        dlStore.saveChapter(ch.id, series.id, ch.title, pages)
+                    }
+                }
+            }
         )
         return
     }
@@ -289,7 +306,7 @@ private fun HomeGrid(
                     Text("No extensions yet", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Open Sources, enable Keiyoushi or LNReader entries that have a site URL. Popular titles load here.",
+                        "Open Sources, enable Keiyoushi or LNReader entries with a site URL. Popular titles load here.",
                         color = LumenColors.MistGray.copy(alpha = 0.8f), fontSize = 13.sp
                     )
                     Spacer(Modifier.height(14.dp))
@@ -321,6 +338,14 @@ private fun HomeGrid(
                                     .background(Brush.verticalGradient(listOf(Color(series.coverHint), LumenColors.DeepGraphite))),
                                 contentAlignment = Alignment.BottomStart
                             ) {
+                                if (!series.coverUrl.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = series.coverUrl,
+                                        contentDescription = series.title,
+                                        contentScale = ContentScale.Crop,
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
                                 Text(series.kind.uppercase(), color = LumenColors.FrostedBlue, fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp))
                             }
