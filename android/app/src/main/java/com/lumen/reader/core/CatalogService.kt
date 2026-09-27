@@ -5,8 +5,10 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
@@ -16,7 +18,7 @@ object CatalogService {
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(35, TimeUnit.SECONDS)
+        .readTimeout(40, TimeUnit.SECONDS)
         .followRedirects(true)
         .build()
 
@@ -75,7 +77,7 @@ object CatalogService {
         val number: Float
     )
 
-    suspend fun fetchPopularFromInstalled(entries: List<IndexEntry>, perSource: Int = 12): List<LiveSeries> =
+    suspend fun fetchPopularFromInstalled(entries: List<IndexEntry>, perSource: Int = 120): List<LiveSeries> =
         withContext(Dispatchers.IO) {
             coroutineScope {
                 entries.map { entry ->
@@ -86,34 +88,43 @@ object CatalogService {
             }
         }
 
-    fun fetchPopular(entry: IndexEntry, limit: Int = 12): List<LiveSeries> {
+    fun fetchPopular(entry: IndexEntry, limit: Int = 120): List<LiveSeries> {
         val base = entry.site?.trim()?.trimEnd('/') ?: return emptyList()
         if (!base.startsWith("http")) return emptyList()
 
-        val paths = buildList {
-            if (entry.kind == MediaKind.NOVEL) {
+        val out = LinkedHashMap<String, LiveSeries>()
+        val isNovel = entry.kind == MediaKind.NOVEL
+        val pageUrls = buildList {
+            if (isNovel) {
                 add("$base/novel/")
                 add("$base/novel/?m_orderby=views")
-                add("$base/novel/page/1/?m_orderby=views")
                 add("$base/latest-release-novel")
-                add("$base/new-novel")
                 add("$base/most-popular")
+                for (p in 1..8) {
+                    add("$base/novel/page/$p/?m_orderby=views")
+                    add("$base/novel/page/$p/")
+                    add("$base/page/$p/")
+                }
             } else {
                 add("$base/manga/?m_orderby=views")
-                add("$base/manga/page/1/?m_orderby=views")
                 add("$base/manga/")
+                for (p in 1..8) {
+                    add("$base/manga/page/$p/?m_orderby=views")
+                    add("$base/manga/page/$p/")
+                }
             }
             add("$base/?s=&post_type=wp-manga")
             add(base)
         }
 
-        for (url in paths.distinct()) {
+        for (url in pageUrls.distinct()) {
+            if (out.size >= limit) break
             val html = httpGet(url) ?: continue
-            val parsed = parseSeriesList(html, base, entry, limit)
-            if (parsed.size >= 3) return parsed.take(limit)
-            if (parsed.isNotEmpty() && url != base) return parsed.take(limit)
+            for (item in parseSeriesList(html, base, entry, limit - out.size)) {
+                if (!out.containsKey(item.id)) out[item.id] = item
+            }
         }
-        return emptyList()
+        return out.values.toList()
     }
 
     private fun parseSeriesList(html: String, base: String, entry: IndexEntry, limit: Int): List<LiveSeries> {
@@ -123,13 +134,15 @@ object CatalogService {
         fun add(title: String, href: String, cover: String?) {
             val t = title.trim().replace(Regex("\\s+"), " ")
             if (t.length < 2) return
+            val low = t.lowercase()
             val bad = listOf(
                 "action novels", "drama novels", "romance novels", "adult novels",
                 "see more", "latest release", "new novel", "completed", "genre",
-                "home", "login", "register", "contact", "privacy"
+                "home", "login", "register", "contact", "privacy", "most popular"
             )
-            if (bad.any { t.equals(it, true) || (t.lowercase().startsWith(it) && t.length < 24) }) return
-            if (href.contains("/genre/") || href.contains("/tag/") || href.endsWith("/novel/") || href.endsWith("/manga/")) return
+            if (bad.any { low == it || (low.startsWith(it) && t.length < 28) }) return
+            if (href.contains("/genre/") || href.contains("/tag/")) return
+            if (href.endsWith("/novel/") || href.endsWith("/manga/")) return
             val id = "${entry.id}|$href"
             if (out.containsKey(id)) return
             out[id] = LiveSeries(
@@ -143,42 +156,31 @@ object CatalogService {
             )
         }
 
-        for (card in doc.select(".page-item-detail, .c-tabs-item__content, .row.c-tabs-item")) {
+        for (card in doc.select(".page-item-detail, .c-tabs-item__content, .row.c-tabs-item, .bs, .bsx")) {
             if (out.size >= limit) break
             val a = card.selectFirst(".post-title a, h3 a, h5 a, a") ?: continue
             val href = abs(base, a.attr("href")) ?: continue
-            val title = a.text().ifBlank { a.attr("title") }
-            val cover = abs(base, imgSrc(card.selectFirst("img")))
-            add(title, href, cover)
+            add(a.text().ifBlank { a.attr("title") }, href, abs(base, imgSrc(card.selectFirst("img"))))
         }
 
-        for (a in doc.select("h3 a, .post-title a, .item-summary a")) {
+        for (a in doc.select("h3 a, .post-title a")) {
             if (out.size >= limit) break
             val href = abs(base, a.attr("href")) ?: continue
-            if (!href.contains("/novel/") && !href.contains("/manga/") && !href.contains("/manhwa/")) continue
-            val title = a.text().ifBlank { a.attr("title") }
+            if (!href.contains("/novel/") && !href.contains("/manga/") && !href.contains("/manhwa/") &&
+                !href.contains("-novel.html")
+            ) continue
             val coverEl = a.parents().firstOrNull { it.selectFirst("img") != null }?.selectFirst("img")
-                ?: a.parent()?.selectFirst("img")
-            add(title, href, abs(base, imgSrc(coverEl)))
+            add(a.text().ifBlank { a.attr("title") }, href, abs(base, imgSrc(coverEl)))
         }
 
-        for (a in doc.select("a[href*=-novel.html], a[href*=/novel/]")) {
+        for (a in doc.select("a[href*=-novel.html], a[href*=/novel/], a[href*=/manga/]")) {
             if (out.size >= limit) break
             val href = abs(base, a.attr("href")) ?: continue
             if (href.contains("latest-release") || href.contains("new-novel") || href.contains("completed-novel")) continue
             val title = a.attr("title").ifBlank { a.text() }.trim()
             if (title.length < 4) continue
-            val wrap = a.closest(".item, .list-novel, li, .col-truyen, .row") ?: a.parent()
+            val wrap = a.closest(".item, li, .col-truyen, .row, .bsx") ?: a.parent()
             add(title, href, abs(base, imgSrc(wrap?.selectFirst("img") ?: a.selectFirst("img"))))
-        }
-
-        for (a in doc.select(".fwn-hot-item a, .home-rec-item a, .ul-list1 a, .item a")) {
-            if (out.size >= limit) break
-            val href = abs(base, a.attr("href")) ?: continue
-            if (!href.contains("novel") && !href.contains("manga")) continue
-            val title = a.attr("title").ifBlank { a.text() }.trim()
-            if (title.length < 4) continue
-            add(title, href, abs(base, imgSrc(a.selectFirst("img") ?: a.parent()?.selectFirst("img"))))
         }
 
         return out.values.toList()
@@ -193,7 +195,7 @@ object CatalogService {
 
         val doc = Jsoup.parse(html, seriesUrl)
         val title = doc.selectFirst(
-            "h1, .post-title h1, .manga-title, .entry-title, .truyen-title, .book-title, .novel-title"
+            "h1, .post-title h1, .manga-title, .entry-title, .truyen-title, .book-title, .novel-title, .title"
         )?.text()?.trim()?.ifBlank { null }
             ?: doc.title().substringBefore("|").substringBefore("-").trim()
 
@@ -202,7 +204,7 @@ object CatalogService {
             imgSrc(
                 doc.selectFirst(
                     ".summary_image img, .thumb img, .manga-thumb img, .book-cover img, " +
-                        ".novel-cover img, .series-cover img"
+                        ".novel-cover img, .series-cover img, .books .book img"
                 )
             ) ?: doc.selectFirst("meta[property=og:image]")?.attr("content")
         )
@@ -219,7 +221,18 @@ object CatalogService {
         val genres = doc.select(".genres-content a, .mgen a, a[rel=tag], .tag-list a")
             .map { it.text().trim() }.filter { it.isNotBlank() }.take(10)
 
-        val chapters = extractChapters(doc, seriesUrl)
+        val chapters = extractChapters(doc, seriesUrl).toMutableList()
+        if (chapters.size < 40) {
+            val ajaxExtra = fetchAjaxChapters(seriesUrl, doc)
+            val seen = chapters.map { it.url }.toMutableSet()
+            for (c in ajaxExtra) {
+                if (c.url !in seen) {
+                    chapters.add(c)
+                    seen.add(c.url)
+                }
+            }
+        }
+
         val series = LiveSeries(
             id = "${entry.id}|$seriesUrl",
             title = title.ifBlank { "Series" },
@@ -232,7 +245,7 @@ object CatalogService {
             description = desc.take(1200),
             genres = genres
         )
-        return series to chapters
+        return series to chapters.sortedByDescending { it.number }
     }
 
     private fun extractChapters(doc: Document, seriesUrl: String): List<LiveChapter> {
@@ -246,52 +259,111 @@ object CatalogService {
             "#chapter-list a",
             "#list-chapter a",
             ".list-chapter a",
+            "ul.list-chapter a",
             ".eplister a",
             "#chapterlist a",
-            "ul.list-chapter a",
-            ".row .chapter a",
-            "a[href*=/chapter-], a[href*=/chapter/], a[href*=ch-]"
+            "a[href*=/chapter-], a[href*=/chapter/], a[href*=chapter-]"
         )
         var auto = 0f
         for (sel in selectors) {
             for (a in doc.select(sel)) {
                 val href = abs(seriesUrl, a.attr("href")) ?: continue
                 val path = href.lowercase()
-                if (path.contains("/genre/") || path.contains("/tag/") || path.endsWith("/novel/") || path.endsWith("/manga/")) continue
-                val name = a.text().trim().ifBlank { a.attr("title") }.ifBlank { "Chapter" }
+                if (path.contains("/genre/") || path.contains("/tag/")) continue
+                if (path.endsWith("/novel/") || path.endsWith("/manga/")) continue
+                var name = a.text().trim().ifBlank { a.attr("title") }.ifBlank { "Chapter" }
                     .replace(Regex("\\s+"), " ")
-                if (name.length < 1) continue
                 if (name.equals("prev", true) || name.equals("next", true) || name.equals("home", true)) continue
+                if (name.length < 1) continue
                 if (chapters.containsKey(href)) continue
                 val numMatch = Regex("""(\\d+(?:\\.\\d+)?)""").find(name)
                 val num = numMatch?.groupValues?.get(1)?.toFloatOrNull() ?: (++auto)
-                chapters[href] = LiveChapter(id = href, title = name.take(100), url = href, number = num)
+                chapters[href] = LiveChapter(id = href, title = name.take(120), url = href, number = num)
             }
-            if (chapters.size > 8) break
+            if (chapters.size > 8000) break
+        }
+        if (chapters.size < 5) {
+            for (a in doc.select("a[href*=chapter-]")) {
+                val href = abs(seriesUrl, a.attr("href")) ?: continue
+                if (chapters.containsKey(href)) continue
+                val name = a.text().trim().ifBlank {
+                    href.substringAfterLast('/').removeSuffix(".html").replace('-', ' ')
+                }
+                val numMatch = Regex("""chapter-(\\d+)""", RegexOption.IGNORE_CASE).find(href)
+                val num = numMatch?.groupValues?.get(1)?.toFloatOrNull() ?: (++auto)
+                chapters[href] = LiveChapter(id = href, title = name.take(120), url = href, number = num)
+            }
         }
         return chapters.values.sortedByDescending { it.number }
+    }
+
+    private fun fetchAjaxChapters(seriesUrl: String, doc: Document): List<LiveChapter> {
+        val out = ArrayList<LiveChapter>()
+        val base = seriesUrl.trimEnd('/')
+        val candidates = mutableListOf("$base/ajax/chapters/", "$base/ajax/chapters")
+        val postId = doc.selectFirst("#manga-chapters-holder")?.attr("data-id")
+            ?: doc.selectFirst("[data-id]")?.attr("data-id")
+        if (!postId.isNullOrBlank()) {
+            val root = base.substringBefore("/manga").substringBefore("/novel").ifBlank { base }
+            candidates += "$root/wp-admin/admin-ajax.php"
+        }
+        for (url in candidates.distinct()) {
+            val html = try {
+                if (url.contains("admin-ajax") && !postId.isNullOrBlank()) {
+                    val form = FormBody.Builder()
+                        .add("action", "manga_get_chapters")
+                        .add("manga", postId)
+                        .build()
+                    val req = Request.Builder().url(url)
+                        .header("User-Agent", "Mozilla/5.0")
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .header("Referer", seriesUrl)
+                        .post(form).build()
+                    client.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() else null }
+                } else {
+                    val req = Request.Builder().url(url)
+                        .header("User-Agent", "Mozilla/5.0")
+                        .header("X-Requested-With", "XMLHttpRequest")
+                        .header("Referer", seriesUrl)
+                        .post(ByteArray(0).toRequestBody(null)).build()
+                    client.newCall(req).execute().use { if (it.isSuccessful) it.body?.string() else null }
+                }
+            } catch (_: Exception) { null } ?: continue
+            if (html.length < 40) continue
+            out += extractChapters(Jsoup.parse(html, seriesUrl), seriesUrl)
+            if (out.size > 20) break
+        }
+        return out
     }
 
     fun fetchChapterPages(chapterUrl: String, isNovel: Boolean): List<String> {
         val html = httpGet(chapterUrl) ?: return emptyList()
         val doc = Jsoup.parse(html, chapterUrl)
-        doc.select(
-            "script, style, nav, header, footer, .navbar, .menu, .ads, .advertisement, " +
-                ".chapter-nav, .nav-links, .prev-next, .breadcrumb, .share, .related, " +
-                "#comments, .comments, form, button, .btn, .settings, .reader-settings"
-        ).remove()
 
         if (isNovel) {
-            val body = doc.selectFirst(
-                "#chapter-content, .chapter-content, .reading-content, .text-left, " +
-                    ".entry-content, .content-area, #content, .chr-c, .chapter-c, " +
-                    ".novel-content, article .content, .box-chap"
+            val candidates = listOf(
+                ".chapter-c", "#chapter-c", "#chr-content", "#chapter-content",
+                ".chapter-content", ".reading-content", ".text-left", ".chr-c",
+                ".box-chap", ".novel-content", "#content", ".entry-content", "article .content"
             )
-            var text = body?.text()?.trim().orEmpty()
+            var text = ""
+            for (sel in candidates) {
+                val el = doc.selectFirst(sel) ?: continue
+                val clone = el.clone()
+                clone.select("script, style, nav, .ads, .chapter-nav, select, option, button, form").remove()
+                val t = clone.text().trim()
+                if (t.length > 200) { text = t; break }
+            }
+            if (text.length < 80) {
+                text = doc.select("div, article, section")
+                    .map { it.text().trim() }
+                    .filter { it.length > 400 }
+                    .maxByOrNull { it.length }
+                    .orEmpty()
+            }
             val junk = listOf(
                 "Font Size", "Font Family", "Background Color", "Reset Chapter",
-                "A Settings", "16px", "Times", "Helvetica", "Nunito", "Merri",
-                "Home Astral", "Prev Next", "A A "
+                "A Settings", "16px", "Translator:", "Editor:", "Prev Next", "Chapter list", "Settings"
             )
             for (j in junk) text = text.replace(j, " ")
             text = text.replace(Regex("\\s{2,}"), " ").trim()
@@ -299,21 +371,22 @@ object CatalogService {
                 return text.split(Regex("(?<=[.!?…])\\s+"))
                     .chunked(5)
                     .map { it.joinToString(" ") }
-                    .filter { it.length > 15 }
+                    .filter { it.length > 12 }
             }
-            return listOf(text.ifBlank { "Could not extract chapter text from this source." })
+            return listOf(text.ifBlank { "No text extracted." })
         }
 
+        doc.select("script, style, nav, header, footer, .ads").remove()
         val imgs = doc.select(
             ".reading-content img, .page-break img, #readerarea img, .chapter-content img, " +
                 ".entry-content img, img.wp-manga-chapter-img, #chapter-content img"
         )
-        val urls = imgs.mapNotNull { img -> abs(chapterUrl, imgSrc(img)) }
-            .filter { it.contains("http") && !it.contains("logo") && !it.contains("avatar") && !it.contains("icon") }
+        val urls = imgs.mapNotNull { abs(chapterUrl, imgSrc(it)) }
+            .filter { it.contains("http") && !it.contains("logo") && !it.contains("avatar") }
             .distinct()
         return urls.ifEmpty {
             doc.select("img").mapNotNull { abs(chapterUrl, imgSrc(it)) }
-                .filter { it.length > 20 && it.contains("http") }.take(40)
+                .filter { it.length > 20 && it.contains("http") }.take(50)
         }
     }
 }
