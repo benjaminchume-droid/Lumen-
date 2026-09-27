@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.lumen.reader.core.CatalogService
+import com.lumen.reader.core.ExtensionRuntime
 import com.lumen.reader.core.ExtensionInstaller
 import com.lumen.reader.core.IndexEntry
 import com.lumen.reader.core.SecureDownloadStore
@@ -65,6 +66,7 @@ fun LumenAppRoot() {
     val store = remember { SourceStore(context) }
     val installer = remember { ExtensionInstaller(context) }
     val dlStore = remember { SecureDownloadStore(context) }
+    val runtime = remember { ExtensionRuntime(context) }
     val scope = rememberCoroutineScope()
     var tab by remember { mutableStateOf(Tab.Home) }
     var sourcesOpen by remember { mutableStateOf(false) }
@@ -91,14 +93,16 @@ fun LumenAppRoot() {
             feedLoading = true
             feedError = null
             refreshInstalled()
-            val withSite = installed.filter { !it.site.isNullOrBlank() && it.site!!.startsWith("http") }
-            if (withSite.isEmpty()) {
+            val withSite = installed.filter {
+                (!it.site.isNullOrBlank() && it.site!!.startsWith("http")) || !it.pkg.isNullOrBlank()
+            }
+            if (withSite.isEmpty() && installed.isEmpty()) {
                 feed = emptyList()
                 feedLoading = false
                 return@launch
             }
             val live = withContext(Dispatchers.IO) {
-                CatalogService.fetchPopularFromInstalled(withSite, perSource = 80)
+                runtime.fetchAllPopular(withSite.ifEmpty { installed }, perSource = 80, maxConcurrent = 8)
             }
             feed = live.map { ls ->
                 CatalogSeries(
@@ -113,8 +117,8 @@ fun LumenAppRoot() {
                 )
             }
             feedLoading = false
-            if (feed.isEmpty() && withSite.isNotEmpty()) {
-                feedError = "No listings from installed sources (site layout or block)."
+            if (feed.isEmpty() && installed.isNotEmpty()) {
+                feedError = "No listings from installed sources yet."
             }
         }
     }
@@ -316,7 +320,7 @@ private fun HomeGrid(
                     Text("No extensions yet", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        "Open Sources, enable Keiyoushi or LNReader entries with a site URL. Popular titles load here.",
+                        "Open Sources — full Keiyoushi + LNReader indexes. Enable any source; Home loads from all installed.",
                         color = LumenColors.MistGray.copy(alpha = 0.8f), fontSize = 13.sp
                     )
                     Spacer(Modifier.height(14.dp))
