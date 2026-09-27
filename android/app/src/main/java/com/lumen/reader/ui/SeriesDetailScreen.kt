@@ -51,7 +51,10 @@ data class CatalogSeries(
     val genres: List<String>,
     val status: String,
     val chapters: List<SeriesChapter>,
-    val coverHint: Long = 0xFF1E2A3A
+    val coverHint: Long = 0xFF1E2A3A,
+    val coverUrl: String? = null,
+    val seriesUrl: String? = null,
+    val sourceId: String = ""
 )
 
 fun sampleCatalogFromInstalled(sourceName: String, kind: String): List<CatalogSeries> {
@@ -119,15 +122,16 @@ fun SeriesDetailScreen(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            Text(series.description, color = LumenColors.MistGray, fontSize = 13.sp, modifier = Modifier.padding(horizontal = 20.dp))
-            Spacer(modifier = Modifier.height(12.dp))
-            Row(modifier = Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                series.genres.take(4).forEach { g ->
-                    Text(g, color = LumenColors.FrostedBlue, fontSize = 11.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(Color(0x227BC6FF)).padding(horizontal = 8.dp, vertical = 4.dp))
-                }
+            if (series.description.isNotBlank()) {
+                Text(
+                    series.description,
+                    color = LumenColors.MistGray.copy(alpha = 0.9f),
+                    fontSize = 13.sp,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                    maxLines = 4
+                )
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -143,7 +147,7 @@ fun SeriesDetailScreen(
             }
             if (showBulk) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     listOf(5, 10, 25, 50, 100).forEach { n ->
@@ -153,7 +157,10 @@ fun SeriesDetailScreen(
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
-                                .clickable { onDownloadChapters(series.chapters.take(n)) }
+                                .clickable {
+                                    onDownloadChapters(series.chapters.take(n))
+                                    showBulk = false
+                                }
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         )
                     }
@@ -163,24 +170,35 @@ fun SeriesDetailScreen(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,
                         modifier = Modifier.clip(RoundedCornerShape(8.dp)).background(LumenColors.FrostedBlue)
-                            .clickable { onDownloadChapters(series.chapters) }
+                            .clickable {
+                                onDownloadChapters(series.chapters)
+                                showBulk = false
+                            }
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     )
                 }
             }
+            Spacer(modifier = Modifier.height(8.dp))
             LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 itemsIndexed(series.chapters) { _, ch ->
                     Row(
-                        modifier = Modifier.fillMaxWidth().clickable { onStartChapter(ch) }.padding(horizontal = 8.dp, vertical = 12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable(interactionSource = noRipple, indication = null) { onStartChapter(ch) }
+                            .padding(horizontal = 8.dp, vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
                             Text(ch.title, color = LumenColors.FrostWhite, fontSize = 14.sp)
-                            if (ch.dateLabel.isNotBlank()) Text(ch.dateLabel, color = LumenColors.MistGray, fontSize = 11.sp)
+                            if (ch.dateLabel.isNotBlank()) {
+                                Text(ch.dateLabel, color = LumenColors.MistGray, fontSize = 11.sp)
+                            }
                         }
                         IconButton(onClick = { onDownloadChapters(listOf(ch)) }) {
-                            Icon(Icons.Default.Download, contentDescription = "Download", tint = LumenColors.MistGray)
+                            Icon(Icons.Default.Download, contentDescription = "Download", tint = LumenColors.MistGray, modifier = Modifier.size(18.dp))
                         }
+                        Icon(Icons.Default.PlayArrow, contentDescription = "Read", tint = LumenColors.FrostedBlue, modifier = Modifier.size(22.dp))
                     }
                 }
             }
