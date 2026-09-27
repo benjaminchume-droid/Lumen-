@@ -54,7 +54,7 @@ object ExtensionIndexFetcher {
     private fun httpGet(url: String): String? {
         val req = Request.Builder()
             .url(url)
-            .header("User-Agent", "LumenReader/1.5")
+            .header("User-Agent", "LumenReader/1.6")
             .header("Accept", "application/json")
             .build()
         client.newCall(req).execute().use { resp ->
@@ -79,7 +79,8 @@ object ExtensionIndexFetcher {
                 }
             }
         }
-        val out = ArrayList<IndexEntry>(arr.length())
+        // Expand EVERY source inside each APK (Mihon lists one source per language/mirror)
+        val out = ArrayList<IndexEntry>(arr.length() * 2)
         for (i in 0 until arr.length()) {
             val o = arr.optJSONObject(i) ?: continue
             val name = o.optString("name")
@@ -87,43 +88,64 @@ object ExtensionIndexFetcher {
             val pkg = o.optString("packageName").ifBlank { o.optString("pkg") }
             if (pkg.isBlank()) continue
             val version = o.optString("versionName").ifBlank { o.optString("version", "1.0") }
-            val code = o.optLong("versionCode", 0L)
+            val code = when {
+                o.has("versionCode") -> o.optLong("versionCode", 0L)
+                else -> o.optString("versionCode", "0").toLongOrNull() ?: 0L
+            }
             val res = o.optJSONObject("resources")
             val apkUrl = res?.optString("apkUrl")?.takeIf { it.isNotBlank() }
                 ?: o.optString("apk").takeIf { it.isNotBlank() }
             val iconUrl = res?.optString("iconUrl")?.takeIf { it.isNotBlank() }
-            val sources = o.optJSONArray("sources")
-            var lang = "all"
-            var site: String? = null
-            if (sources != null && sources.length() > 0) {
-                val s0 = sources.optJSONObject(0)
-                if (s0 != null) {
-                    lang = s0.optString("language").ifBlank { s0.optString("lang", "all") }
-                    site = s0.optString("homeUrl").takeIf { it.isNotBlank() }
-                        ?: s0.optString("baseUrl").takeIf { it.isNotBlank() }
-                }
-            }
             val nsfw = when {
                 o.optString("contentWarning").contains("NSFW", true) -> true
                 o.optBoolean("nsfw", false) -> true
+                o.optInt("nsfw", 0) == 1 -> true
                 else -> false
             }
-            out.add(
-                IndexEntry(
-                    id = pkg,
-                    name = name,
-                    version = version,
-                    lang = lang,
-                    kind = MediaKind.MANGA,
-                    nsfw = nsfw,
-                    iconUrl = iconUrl,
-                    pkg = pkg,
-                    apkUrl = apkUrl,
-                    site = site,
-                    repoId = "keiyoushi",
-                    versionCode = code
+            val sources = o.optJSONArray("sources")
+            if (sources != null && sources.length() > 0) {
+                for (si in 0 until sources.length()) {
+                    val s = sources.optJSONObject(si) ?: continue
+                    val lang = s.optString("language").ifBlank { s.optString("lang", "all") }
+                    val site = s.optString("homeUrl").takeIf { it.isNotBlank() }
+                        ?: s.optString("baseUrl").takeIf { it.isNotBlank() }
+                    val srcName = s.optString("name").ifBlank { name }
+                    val srcId = s.optString("id").ifBlank { "$pkg-$lang-$si" }
+                    out.add(
+                        IndexEntry(
+                            id = if (sources.length() == 1) pkg else "$pkg:$srcId",
+                            name = if (sources.length() == 1) name else "$srcName ($lang)",
+                            version = version,
+                            lang = lang,
+                            kind = MediaKind.MANGA,
+                            nsfw = nsfw,
+                            iconUrl = iconUrl,
+                            pkg = pkg,
+                            apkUrl = apkUrl,
+                            site = site,
+                            repoId = "keiyoushi",
+                            versionCode = code
+                        )
+                    )
+                }
+            } else {
+                out.add(
+                    IndexEntry(
+                        id = pkg,
+                        name = name,
+                        version = version,
+                        lang = o.optString("lang", "all"),
+                        kind = MediaKind.MANGA,
+                        nsfw = nsfw,
+                        iconUrl = iconUrl,
+                        pkg = pkg,
+                        apkUrl = apkUrl,
+                        site = null,
+                        repoId = "keiyoushi",
+                        versionCode = code
+                    )
                 )
-            )
+            }
         }
         return out
     }
