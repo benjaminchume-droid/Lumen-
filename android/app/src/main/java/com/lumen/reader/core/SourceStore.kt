@@ -1,11 +1,11 @@
 package com.lumen.reader.core
 
 import android.content.Context
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Persists installed extension ids + metadata (Mihon-style: index first, install on demand).
+ * Persists extension metadata the user chose to install.
+ * Package presence is verified via PackageManager by ExtensionInstaller.
  */
 class SourceStore(context: Context) {
     private val prefs = context.getSharedPreferences("lumen_sources", Context.MODE_PRIVATE)
@@ -53,24 +53,25 @@ class SourceStore(context: Context) {
         o.put("apkUrl", apkUrl)
         o.put("site", site)
         o.put("repoId", repoId)
+        o.put("versionCode", versionCode)
         return o.toString()
     }
 
     private fun parseJson(s: String): IndexEntry? = try {
         val o = JSONObject(s)
         IndexEntry(
-            id = o.getString("id"),
-            name = o.getString("name"),
-            version = o.optString("version", "1"),
+            id = o.optString("id"),
+            name = o.optString("name"),
+            version = o.optString("version"),
             lang = o.optString("lang", "all"),
-            kind = runCatching { MediaKind.valueOf(o.optString("kind", "MANGA")) }
-                .getOrDefault(MediaKind.MANGA),
+            kind = try { MediaKind.valueOf(o.optString("kind", "MANGA")) } catch (_: Exception) { MediaKind.MANGA },
             nsfw = o.optBoolean("nsfw", false),
             iconUrl = o.optString("iconUrl").takeIf { it.isNotBlank() },
             pkg = o.optString("pkg").takeIf { it.isNotBlank() },
             apkUrl = o.optString("apkUrl").takeIf { it.isNotBlank() },
             site = o.optString("site").takeIf { it.isNotBlank() },
-            repoId = o.optString("repoId", "")
+            repoId = o.optString("repoId", ""),
+            versionCode = o.optLong("versionCode", 0L)
         )
     } catch (_: Exception) {
         null
