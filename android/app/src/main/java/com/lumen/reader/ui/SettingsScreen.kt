@@ -17,14 +17,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Source
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,54 +42,27 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lumen.reader.BuildConfig
+import com.lumen.reader.core.AppUpdateManager
 import com.lumen.reader.core.SourceStore
+import com.lumen.reader.core.UpdatePhase
 import kotlinx.coroutines.launch
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import org.json.JSONObject
 
 @Composable
-fun SettingsScreen(onOpenSources: () -> Unit) {
+fun SettingsScreen(
+    onOpenSources: () -> Unit,
+    onSignIn: () -> Unit = {},
+    onGuest: () -> Unit = {}
+) {
     val context = LocalContext.current
     val store = remember { SourceStore(context) }
+    val updater = remember { AppUpdateManager(context) }
+    val updateState by updater.state.collectAsState()
     val scope = rememberCoroutineScope()
     val scroll = rememberScrollState()
 
     var themeMode by remember { mutableStateOf("dark") }
-    var updateMsg by remember { mutableStateOf<String?>(null) }
-    var checkingUpdate by remember { mutableStateOf(false) }
     val installedCount = store.installedIds().size
     val versionName = BuildConfig.VERSION_NAME
-
-    fun checkUpdate() {
-        scope.launch {
-            checkingUpdate = true
-            updateMsg = null
-            try {
-                val client = OkHttpClient()
-                val req = Request.Builder()
-                    .url(BuildConfig.UPDATE_ENDPOINT)
-                    .header("Accept", "application/vnd.github+json")
-                    .build()
-                client.newCall(req).execute().use { resp ->
-                    if (!resp.isSuccessful) {
-                        updateMsg = "Could not check right now"
-                        return@use
-                    }
-                    val json = JSONObject(resp.body?.string().orEmpty())
-                    val tag = json.optString("tag_name", "")
-                    updateMsg = if (tag.isNotBlank() && !tag.endsWith(versionName)) {
-                        "Update available: $tag"
-                    } else {
-                        "You're up to date"
-                    }
-                }
-            } catch (_: Exception) {
-                updateMsg = "Could not check right now"
-            }
-            checkingUpdate = false
-        }
-    }
 
     Column(
         modifier = Modifier
@@ -103,43 +78,31 @@ fun SettingsScreen(onOpenSources: () -> Unit) {
 
         Spacer(modifier = Modifier.height(24.dp))
         SectionLabel("Account")
-        SettingsRow(icon = Icons.Default.Person, title = "Continue as guest", subtitle = "Read offline · upgrade anytime in Settings")
-        SettingsRow(icon = Icons.Default.Email, title = "Sign in / Sign up", subtitle = "Email OTP · 6-digit code · library sync")
+        SettingsRow(
+            icon = Icons.Default.Person,
+            title = "Continue as guest",
+            subtitle = "Read offline · upgrade anytime in Settings",
+            onClick = onGuest
+        )
+        SettingsRow(
+            icon = Icons.Default.Email,
+            title = "Sign in to account",
+            subtitle = "Email · password or OTP · interests · library sync",
+            onClick = onSignIn
+        )
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Customization")
         SettingsRow(
             icon = Icons.Default.Settings,
             title = "Theme",
-            subtitle = themeMode.replaceFirstChar { it.uppercase() },
-            trailing = {
-                Row {
-                    listOf("light", "dark", "amoled").forEach { mode ->
-                        val selected = themeMode == mode
-                        Text(
-                            mode.uppercase().take(5),
-                            color = if (selected) LumenColors.SoftBlack else LumenColors.MistGray,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .padding(start = 4.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (selected) LumenColors.FrostedBlue else Color.Transparent)
-                                .clickable { themeMode = mode }
-                                .padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
-                }
-            }
+            subtitle = if (themeMode == "dark") "Dark (Frost)" else "Light",
+            onClick = { themeMode = if (themeMode == "dark") "light" else "dark" }
         )
-        SettingsRow(icon = Icons.Default.Settings, title = "Reader defaults", subtitle = "Font, size, and page layout")
-
-        Spacer(modifier = Modifier.height(20.dp))
-        SectionLabel("Sources")
         SettingsRow(
-            icon = Icons.Default.List,
-            title = "Extensions",
-            subtitle = if (installedCount == 0) "None installed yet" else "$installedCount installed",
+            icon = Icons.Default.Source,
+            title = "Sources & extensions",
+            subtitle = "$installedCount installed · Keiyoushi + LNReader",
             onClick = onOpenSources
         )
 
@@ -148,14 +111,57 @@ fun SettingsScreen(onOpenSources: () -> Unit) {
         SettingsRow(
             icon = Icons.Default.Refresh,
             title = "Check for updates",
-            subtitle = updateMsg ?: "Only installs a newer release once",
-            onClick = { if (!checkingUpdate) checkUpdate() },
+            subtitle = updateState.message.ifBlank { "Fetches latest APK from GitHub releases" },
+            onClick = {
+                if (updateState.phase != UpdatePhase.CHECKING && updateState.phase != UpdatePhase.DOWNLOADING) {
+                    scope.launch {
+                        val s = updater.checkForUpdate()
+                        if (s.phase == UpdatePhase.AVAILABLE) {
+                            updater.downloadAndInstall()
+                        }
+                    }
+                }
+            },
             trailing = {
-                if (checkingUpdate) {
-                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = LumenColors.FrostedBlue)
+                when (updateState.phase) {
+                    UpdatePhase.CHECKING, UpdatePhase.DOWNLOADING, UpdatePhase.INSTALLING ->
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp,
+                            color = LumenColors.FrostedBlue
+                        )
+                    else -> {}
                 }
             }
         )
+        if (updateState.phase == UpdatePhase.DOWNLOADING || updateState.phase == UpdatePhase.READY) {
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+                LinearProgressIndicator(
+                    progress = { updateState.percent / 100f },
+                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)),
+                    color = LumenColors.FrostedBlue,
+                    trackColor = Color.White.copy(alpha = 0.12f)
+                )
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    "${updateState.percent}% · ${updateState.bytesDone / 1024} KB" +
+                        if (updateState.bytesTotal > 0) " / ${updateState.bytesTotal / 1024} KB" else "",
+                    color = LumenColors.MistGray,
+                    fontSize = 11.sp
+                )
+            }
+        }
+        if (updateState.phase == UpdatePhase.AVAILABLE) {
+            Text(
+                "Tap again to download & install ${updateState.remoteTag}",
+                color = LumenColors.FrostedBlue,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp)
+                    .clickable {
+                        scope.launch { updater.downloadAndInstall() }
+                    }
+            )
+        }
 
         Spacer(modifier = Modifier.height(20.dp))
         SectionLabel("Legal")
