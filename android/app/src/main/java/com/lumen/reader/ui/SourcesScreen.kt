@@ -222,10 +222,12 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                         } else {
                             IconButton(onClick = {
                                 scope.launch {
-                                    if (entry.apkUrl.isNullOrBlank()) {
+                                    val apk = entry.apkUrl
+                                    // LNReader plugins are compiled JS, not Android APKs
+                                    if (apk.isNullOrBlank() || apk.endsWith(".js") || entry.repoId == "lnreader") {
                                         store.install(entry)
                                         installed = store.getInstalled()
-                                        status = "Enabled ${entry.name} (plugin)"
+                                        status = "Enabled ${entry.name} · ${entry.site ?: "no site"}"
                                         return@launch
                                     }
                                     if (!installer.canRequestPackageInstalls()) {
@@ -234,12 +236,12 @@ fun SourcesScreen(onBack: () -> Unit = {}, embedded: Boolean = false) {
                                         return@launch
                                     }
                                     val result = installer.downloadAndInstall(entry)
-                                    result.onSuccess { apk ->
+                                    result.onSuccess { file ->
                                         store.install(entry)
                                         installed = store.getInstalled()
                                         installer.markInstalling(entry.id)
                                         try {
-                                            context.startActivity(installer.launchInstall(apk))
+                                            context.startActivity(installer.launchInstall(file))
                                         } catch (e: Exception) {
                                             status = e.message ?: "Install prompt failed"
                                         }
