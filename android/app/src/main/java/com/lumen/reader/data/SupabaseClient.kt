@@ -23,22 +23,11 @@ object SupabaseClient {
 
     private val jsonMedia = "application/json".toMediaType()
 
-    @Volatile
-    var accessToken: String? = null
-        private set
+    @Volatile var accessToken: String? = null; private set
+    @Volatile var userId: String? = null; private set
+    @Volatile var lastError: String? = null; private set
 
-    @Volatile
-    var userId: String? = null
-        private set
-
-    @Volatile
-    var lastError: String? = null
-        private set
-
-    fun clearToken() {
-        accessToken = null
-        userId = null
-    }
+    fun clearToken() { accessToken = null; userId = null }
 
     private fun captureSession(body: String) {
         try {
@@ -51,17 +40,15 @@ object SupabaseClient {
                 json.optJSONObject("session")?.optJSONObject("user")?.optString("id").orEmpty()
             }
             if (uid.isNotBlank()) userId = uid
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) {}
     }
 
     suspend fun signUp(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
         lastError = null
         try {
             val payload = JSONObject().put("email", email).put("password", password).toString()
-            val req = Request.Builder().url("$URL/auth/v1/signup")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
+            val req = Request.Builder().url("$URL/auth/v1/signup").header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json").post(payload.toRequestBody(jsonMedia)).build()
             client.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful) { captureSession(body); true }
@@ -74,9 +61,8 @@ object SupabaseClient {
         lastError = null
         try {
             val payload = JSONObject().put("email", email).put("password", password).toString()
-            val req = Request.Builder().url("$URL/auth/v1/token?grant_type=password")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
+            val req = Request.Builder().url("$URL/auth/v1/token?grant_type=password").header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json").post(payload.toRequestBody(jsonMedia)).build()
             client.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful) { captureSession(body); true }
@@ -89,13 +75,11 @@ object SupabaseClient {
         lastError = null
         try {
             val payload = JSONObject().put("email", email).put("create_user", true).toString()
-            val req = Request.Builder().url("$URL/auth/v1/otp")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
+            val req = Request.Builder().url("$URL/auth/v1/otp").header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json").post(payload.toRequestBody(jsonMedia)).build()
             client.newCall(req).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful || resp.code == 429) true
-                else { lastError = parseAuthError(body) ?: "Could not send code (${resp.code})"; false }
+                else { lastError = parseAuthError(resp.body?.string().orEmpty()) ?: "Could not send code"; false }
             }
         } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
     }
@@ -104,9 +88,8 @@ object SupabaseClient {
         lastError = null
         try {
             val payload = JSONObject().put("email", email).put("token", token).put("type", "email").toString()
-            val req = Request.Builder().url("$URL/auth/v1/verify")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
+            val req = Request.Builder().url("$URL/auth/v1/verify").header("apikey", ANON_KEY)
+                .header("Content-Type", "application/json").post(payload.toRequestBody(jsonMedia)).build()
             client.newCall(req).execute().use { resp ->
                 val body = resp.body?.string().orEmpty()
                 if (resp.isSuccessful) { captureSession(body); true }
@@ -115,49 +98,19 @@ object SupabaseClient {
         } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
     }
 
-    suspend fun sendRecoveryOtp(email: String): Boolean = withContext(Dispatchers.IO) {
-        lastError = null
-        try {
-            val payload = JSONObject().put("email", email).put("create_user", false).toString()
-            val req = Request.Builder().url("$URL/auth/v1/otp")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful || resp.code == 429) true
-                else { lastError = parseAuthError(resp.body?.string().orEmpty()) ?: "Could not send reset code"; false }
-            }
-        } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
-    }
-
-    suspend fun verifyRecoveryOtp(email: String, token: String): Boolean = withContext(Dispatchers.IO) {
-        lastError = null
-        try {
-            val payload = JSONObject().put("email", email).put("token", token).put("type", "recovery").toString()
-            val req = Request.Builder().url("$URL/auth/v1/verify")
-                .header("apikey", ANON_KEY).header("Content-Type", "application/json")
-                .post(payload.toRequestBody(jsonMedia)).build()
-            client.newCall(req).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
-                if (resp.isSuccessful) { captureSession(body); true } else verifyOtp(email, token)
-            }
-        } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
-    }
+    suspend fun sendRecoveryOtp(email: String): Boolean = sendOtp(email)
+    suspend fun verifyRecoveryOtp(email: String, token: String): Boolean = verifyOtp(email, token)
 
     suspend fun updatePassword(newPassword: String): Boolean = withContext(Dispatchers.IO) {
         lastError = null
-        val token = accessToken
-        if (token.isNullOrBlank()) { lastError = "Session expired — verify code again"; return@withContext false }
+        val token = accessToken ?: run { lastError = "Session expired"; return@withContext false }
         try {
             val payload = JSONObject().put("password", newPassword).toString()
-            val req = Request.Builder().url("$URL/auth/v1/user")
-                .header("apikey", ANON_KEY).header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
+            val req = Request.Builder().url("$URL/auth/v1/user").header("apikey", ANON_KEY)
+                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
                 .put(payload.toRequestBody(jsonMedia)).build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) true
-                else { lastError = parseAuthError(resp.body?.string().orEmpty()) ?: "Could not update password"; false }
-            }
-        } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
+            client.newCall(req).execute().use { it.isSuccessful }
+        } catch (e: Exception) { lastError = e.message; false }
     }
 
     suspend fun isUsernameAvailable(username: String): Boolean = withContext(Dispatchers.IO) {
@@ -166,13 +119,10 @@ object SupabaseClient {
             val q = java.net.URLEncoder.encode(username, "UTF-8")
             val req = Request.Builder()
                 .url("$URL/rest/v1/profiles?select=id&username=ilike.$q&limit=1")
-                .header("apikey", ANON_KEY)
-                .header("Authorization", "Bearer ${accessToken ?: ANON_KEY}")
+                .header("apikey", ANON_KEY).header("Authorization", "Bearer ${accessToken ?: ANON_KEY}")
                 .header("Accept", "application/json").get().build()
             client.newCall(req).execute().use { resp ->
-                val body = resp.body?.string().orEmpty()
-                if (!resp.isSuccessful) { lastError = "Could not check username"; return@withContext false }
-                val arr = try { JSONArray(body) } catch (_: Exception) { JSONArray() }
+                val arr = try { JSONArray(resp.body?.string().orEmpty()) } catch (_: Exception) { JSONArray() }
                 arr.length() == 0
             }
         } catch (e: Exception) { lastError = e.message; false }
@@ -180,55 +130,130 @@ object SupabaseClient {
 
     suspend fun upsertProfile(username: String, email: String): Boolean = withContext(Dispatchers.IO) {
         lastError = null
-        val token = accessToken
-        val uid = userId
+        val token = accessToken; val uid = userId
         if (token.isNullOrBlank() || uid.isNullOrBlank()) { lastError = "Not authenticated"; return@withContext false }
         try {
             val payload = JSONObject().put("id", uid).put("username", username)
                 .put("display_name", username).put("email", email)
                 .put("updated_at", java.time.Instant.now().toString()).toString()
-            val req = Request.Builder().url("$URL/rest/v1/profiles")
-                .header("apikey", ANON_KEY).header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json")
+            val req = Request.Builder().url("$URL/rest/v1/profiles").header("apikey", ANON_KEY)
+                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
                 .header("Prefer", "resolution=merge-duplicates,return=minimal")
                 .post(payload.toRequestBody(jsonMedia)).build()
-            client.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful || resp.code in 200..299) true
-                else { lastError = parseAuthError(resp.body?.string().orEmpty()) ?: "Profile save failed (${resp.code})"; false }
-            }
-        } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
+            client.newCall(req).execute().use { it.isSuccessful || it.code in 200..299 }
+        } catch (e: Exception) { lastError = e.message; false }
     }
 
     suspend fun saveInterests(genres: List<String>): Boolean = withContext(Dispatchers.IO) {
-        lastError = null
-        val token = accessToken
-        val uid = userId
+        val token = accessToken; val uid = userId
         if (token.isNullOrBlank() || uid.isNullOrBlank()) return@withContext false
         try {
             val arr = JSONArray(); genres.forEach { arr.put(it) }
             val payload = JSONObject().put("interests", arr)
                 .put("updated_at", java.time.Instant.now().toString()).toString()
-            val req = Request.Builder().url("$URL/rest/v1/profiles?id=eq.$uid")
-                .header("apikey", ANON_KEY).header("Authorization", "Bearer $token")
-                .header("Content-Type", "application/json").header("Prefer", "return=minimal")
-                .method("PATCH", payload.toRequestBody(jsonMedia)).build()
-            client.newCall(req).execute().use { it.isSuccessful || it.code in 200..299 }
+            val req = Request.Builder().url("$URL/rest/v1/profiles?id=eq.$uid").header("apikey", ANON_KEY)
+                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                .header("Prefer", "return=minimal").method("PATCH", payload.toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { it.isSuccessful }
         } catch (_: Exception) { false }
     }
 
     suspend fun saveInterests(interests: String): Boolean =
         saveInterests(interests.split(',').map { it.trim() }.filter { it.isNotEmpty() })
 
-    private fun parseAuthError(body: String): String? {
-        return try {
-            val j = JSONObject(body)
-            j.optString("error_description").ifBlank {
-                j.optString("msg").ifBlank {
-                    j.optString("message").ifBlank {
-                        j.optJSONObject("error")?.optString("message").orEmpty()
+    suspend fun publishSeries(
+        title: String, description: String, coverUrl: String?, contentType: String,
+        genres: List<String>, firstChapterTitle: String?, firstChapterText: String?
+    ): Boolean = withContext(Dispatchers.IO) {
+        lastError = null
+        val token = accessToken
+        if (token.isNullOrBlank()) { lastError = "Not signed in"; return@withContext false }
+        try {
+            val payload = JSONObject().put("title", title).put("description", description)
+                .put("cover_url", coverUrl ?: JSONObject.NULL)
+                .put("content_type", contentType).put("origin_type", "lumen")
+                .put("status", "ongoing").put("language", "en")
+            val req = Request.Builder().url("$URL/rest/v1/series").header("apikey", ANON_KEY)
+                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                .header("Prefer", "return=representation")
+                .post(payload.toString().toRequestBody(jsonMedia)).build()
+            client.newCall(req).execute().use { resp ->
+                val body = resp.body?.string().orEmpty()
+                if (!resp.isSuccessful) {
+                    lastError = parseAuthError(body) ?: "Publish failed (${resp.code})"
+                    return@withContext false
+                }
+                val seriesId = try {
+                    val arr = JSONArray(body)
+                    arr.optJSONObject(0)?.optString("id").orEmpty()
+                } catch (_: Exception) { JSONObject(body).optString("id") }
+                if (seriesId.isNotBlank() && !firstChapterText.isNullOrBlank()) {
+                    val chPayload = JSONObject().put("series_id", seriesId).put("chapter_number", 1)
+                        .put("title", firstChapterTitle ?: "Chapter 1")
+                        .put("content_type", "text").put("status", "published")
+                    val chReq = Request.Builder().url("$URL/rest/v1/chapters").header("apikey", ANON_KEY)
+                        .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                        .header("Prefer", "return=representation")
+                        .post(chPayload.toString().toRequestBody(jsonMedia)).build()
+                    client.newCall(chReq).execute().use { chResp ->
+                        val chBody = chResp.body?.string().orEmpty()
+                        val chId = try { JSONArray(chBody).optJSONObject(0)?.optString("id") } catch (_: Exception) { null }
+                        if (!chId.isNullOrBlank()) {
+                            val contentPayload = JSONObject().put("chapter_id", chId)
+                                .put("content", firstChapterText)
+                                .put("word_count", firstChapterText.split(Regex("\\s+")).size)
+                            val cReq = Request.Builder().url("$URL/rest/v1/chapter_content").header("apikey", ANON_KEY)
+                                .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+                                .header("Prefer", "return=minimal")
+                                .post(contentPayload.toString().toRequestBody(jsonMedia)).build()
+                            client.newCall(cReq).execute().use { }
+                        }
                     }
                 }
-            }.ifBlank { null }
+                true
+            }
+        } catch (e: Exception) { lastError = e.message ?: "Network error"; false }
+    }
+
+    data class LumenSeries(val id: String, val title: String, val description: String, val coverUrl: String?, val contentType: String)
+
+    suspend fun fetchLumenFeed(limit: Int = 30): List<LumenSeries> = withContext(Dispatchers.IO) {
+        try {
+            val req = Request.Builder()
+                .url("$URL/rest/v1/series?select=id,title,description,cover_url,content_type&origin_type=eq.lumen&order=created_at.desc&limit=$limit")
+                .header("apikey", ANON_KEY).header("Authorization", "Bearer ${accessToken ?: ANON_KEY}")
+                .header("Accept", "application/json").get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext emptyList()
+                val arr = JSONArray(resp.body?.string().orEmpty())
+                (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    LumenSeries(o.optString("id"), o.optString("title"), o.optString("description"),
+                        o.optString("cover_url").ifBlank { null }, o.optString("content_type", "novel"))
+                }
+            }
+        } catch (_: Exception) { emptyList() }
+    }
+
+    suspend fun refreshProfileUsername(): String? = withContext(Dispatchers.IO) {
+        val token = accessToken ?: return@withContext null
+        val uid = userId ?: return@withContext null
+        try {
+            val req = Request.Builder()
+                .url("$URL/rest/v1/profiles?select=username&id=eq.$uid&limit=1")
+                .header("apikey", ANON_KEY).header("Authorization", "Bearer $token")
+                .header("Accept", "application/json").get().build()
+            client.newCall(req).execute().use { resp ->
+                if (!resp.isSuccessful) return@withContext null
+                JSONArray(resp.body?.string().orEmpty()).optJSONObject(0)?.optString("username")?.ifBlank { null }
+            }
         } catch (_: Exception) { null }
     }
+
+    private fun parseAuthError(body: String): String? = try {
+        val j = JSONObject(body)
+        j.optString("error_description").ifBlank {
+            j.optString("msg").ifBlank { j.optString("message").ifBlank { null } }
+        }.ifBlank { null }
+    } catch (_: Exception) { null }
 }
