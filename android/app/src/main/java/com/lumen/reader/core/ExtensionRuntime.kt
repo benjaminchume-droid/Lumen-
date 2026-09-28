@@ -11,13 +11,9 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
-/**
- * Mihon + LNReader runtime host.
- * Keiyoushi: PathClassLoader + reflective Source APIs; CatalogService site fallback.
- * LNReader: JS on disk; CatalogService against plugin site.
- */
 class ExtensionRuntime(private val context: Context) {
 
     private val host = ExtensionHost(context)
@@ -33,8 +29,8 @@ class ExtensionRuntime(private val context: Context) {
 
     suspend fun fetchAllPopular(
         installed: List<IndexEntry>,
-        perSource: Int = 80,
-        maxConcurrent: Int = 6
+        perSource: Int = 16,
+        maxConcurrent: Int = 4
     ): List<CatalogService.LiveSeries> = withContext(Dispatchers.IO) {
         if (installed.isEmpty()) return@withContext emptyList()
         val sem = Semaphore(maxConcurrent)
@@ -42,7 +38,9 @@ class ExtensionRuntime(private val context: Context) {
             installed.map { entry ->
                 async {
                     sem.withPermit {
-                        runCatching { fetchOne(entry, perSource) }.getOrDefault(emptyList())
+                        withTimeoutOrNull(8_000L) {
+                            runCatching { fetchOne(entry, perSource) }.getOrDefault(emptyList())
+                        } ?: emptyList()
                     }
                 }
             }.awaitAll().flatten()
@@ -71,9 +69,7 @@ class ExtensionRuntime(private val context: Context) {
                 out.addAll(list)
             }
             out.distinctBy { it.url }.sortedBy { it.number }
-        } catch (_: Throwable) {
-            emptyList()
-        }
+        } catch (_: Throwable) { emptyList() }
     }
 
     private fun classLoaderFor(pkg: String): PathClassLoader? {
@@ -87,9 +83,7 @@ class ExtensionRuntime(private val context: Context) {
             }
             val app = pi.applicationInfo ?: return null
             PathClassLoader(app.sourceDir, context.classLoader)
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
     private fun instantiateSources(pkg: String, loader: PathClassLoader): List<Any> {
@@ -115,14 +109,12 @@ class ExtensionRuntime(private val context: Context) {
                 val created = when {
                     instance.javaClass.methods.any { it.name == "createSources" } -> {
                         @Suppress("UNCHECKED_CAST")
-                        (clazz.getMethod("createSources").invoke(instance) as? List<*>).orEmpty()
-                            .filterNotNull()
+                        (clazz.getMethod("createSources").invoke(instance) as? List<*>).orEmpty().filterNotNull()
                     }
                     else -> listOf(instance)
                 }
                 out.addAll(created)
-            } catch (_: Throwable) {
-            }
+            } catch (_: Throwable) {}
         }
         return out
     }
@@ -142,33 +134,24 @@ class ExtensionRuntime(private val context: Context) {
                 }
             }
             out
-        } catch (_: Throwable) {
-            emptyList()
-        }
+        } catch (_: Throwable) { emptyList() }
     }
 
     private fun tryInvokePopular(source: Any, page: Int): List<CatalogService.LiveSeries>? {
         return try {
             val methods = source.javaClass.methods
-            val fetch = methods.firstOrNull {
-                it.name == "fetchPopularManga" && it.parameterTypes.size == 1
-            }
-            val get = methods.firstOrNull {
-                it.name == "getPopularManga" && it.parameterTypes.size == 1
-            }
+            val fetch = methods.firstOrNull { it.name == "fetchPopularManga" && it.parameterTypes.size == 1 }
+            val get = methods.firstOrNull { it.name == "getPopularManga" && it.parameterTypes.size == 1 }
             val raw: Any = when {
                 fetch != null -> fetch.invoke(source, page) ?: return null
                 get != null -> get.invoke(source, page) ?: return null
                 else -> return null
             }
-
             val mangas: List<*> = when (raw) {
                 is List<*> -> raw
                 else -> {
                     val field = raw.javaClass.fields.firstOrNull { it.name == "mangas" }
-                    val method = raw.javaClass.methods.firstOrNull {
-                        it.name == "getMangas" || it.name == "mangas"
-                    }
+                    val method = raw.javaClass.methods.firstOrNull { it.name == "getMangas" || it.name == "mangas" }
                     when {
                         field != null -> field.get(raw) as? List<*>
                         method != null -> method.invoke(raw) as? List<*>
@@ -176,33 +159,25 @@ class ExtensionRuntime(private val context: Context) {
                     } ?: return null
                 }
             }
-
             mangas.mapNotNull { m ->
                 if (m == null) return@mapNotNull null
                 val title = readProp(m, "title", "name") ?: return@mapNotNull null
                 val url = readProp(m, "url", "path") ?: ""
                 val thumb = readProp(m, "thumbnail_url", "thumbnailUrl", "cover")
                 CatalogService.LiveSeries(
-                    id = "${source.javaClass.name}|$url|$title",
-                    title = title,
-                    url = url,
-                    coverUrl = thumb,
-                    sourceName = readProp(source, "name") ?: source.javaClass.simpleName,
-                    sourceId = source.javaClass.name,
-                    kind = "manga"
+                    id = "${source.javaClass.name}|$url|$title", title = title, url = url,
+                    coverUrl = thumb, sourceName = readProp(source, "name") ?: source.javaClass.simpleName,
+                    sourceId = source.javaClass.name, kind = "manga"
                 )
             }
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
     private fun invokeChapterList(source: Any, seriesUrl: String): List<CatalogService.LiveChapter>? {
         return try {
             val methods = source.javaClass.methods
             val get = methods.firstOrNull {
-                (it.name == "getChapterList" || it.name == "fetchChapterList") &&
-                    it.parameterTypes.size == 1
+                (it.name == "getChapterList" || it.name == "fetchChapterList") && it.parameterTypes.size == 1
             } ?: return null
             val argType = get.parameterTypes[0]
             val arg: Any = when {
@@ -211,60 +186,39 @@ class ExtensionRuntime(private val context: Context) {
                     try {
                         val inst = argType.getDeclaredConstructor().newInstance()
                         argType.fields.firstOrNull { it.name.equals("url", true) }?.set(inst, seriesUrl)
-                        argType.methods.firstOrNull {
-                            it.name.equals("setUrl", true) && it.parameterTypes.size == 1
-                        }?.invoke(inst, seriesUrl)
                         inst
-                    } catch (_: Throwable) {
-                        seriesUrl
-                    }
+                    } catch (_: Throwable) { seriesUrl }
                 }
             }
             val raw = get.invoke(source, arg) ?: return null
             val list: List<*> = when (raw) {
                 is List<*> -> raw
-                else -> {
-                    val m = raw.javaClass.methods.firstOrNull {
-                        it.name == "toList" || it.name == "blockingFirst"
-                    }
-                    (m?.invoke(raw) as? List<*>) ?: return null
-                }
+                else -> (raw.javaClass.methods.firstOrNull { it.name == "toList" || it.name == "blockingFirst" }
+                    ?.invoke(raw) as? List<*>) ?: return null
             }
             list.mapIndexedNotNull { i, ch ->
                 if (ch == null) return@mapIndexedNotNull null
                 val name = readProp(ch, "name", "title", "chapter_name") ?: "Chapter ${i + 1}"
                 val url = readProp(ch, "url", "path") ?: return@mapIndexedNotNull null
-                val num = readProp(ch, "chapter_number", "number", "chapterNumber")
-                    ?.toFloatOrNull() ?: (i + 1).toFloat()
+                val num = readProp(ch, "chapter_number", "number", "chapterNumber")?.toFloatOrNull() ?: (i + 1).toFloat()
                 CatalogService.LiveChapter(id = url, title = name, url = url, number = num)
             }
-        } catch (_: Throwable) {
-            null
-        }
+        } catch (_: Throwable) { null }
     }
 
     private fun readProp(obj: Any, vararg names: String): String? {
         for (n in names) {
             try {
                 val f = obj.javaClass.fields.firstOrNull { it.name.equals(n, true) }
-                if (f != null) {
-                    val v = f.get(obj)?.toString()
-                    if (!v.isNullOrBlank()) return v
-                }
-            } catch (_: Throwable) {
-            }
+                if (f != null) { val v = f.get(obj)?.toString(); if (!v.isNullOrBlank()) return v }
+            } catch (_: Throwable) {}
             try {
                 val getter = "get" + n.replaceFirstChar { c -> c.uppercase() }
                 val m = obj.javaClass.methods.firstOrNull {
-                    (it.name.equals(n, true) || it.name.equals(getter, true)) &&
-                        it.parameterTypes.isEmpty()
+                    (it.name.equals(n, true) || it.name.equals(getter, true)) && it.parameterTypes.isEmpty()
                 }
-                if (m != null) {
-                    val v = m.invoke(obj)?.toString()
-                    if (!v.isNullOrBlank()) return v
-                }
-            } catch (_: Throwable) {
-            }
+                if (m != null) { val v = m.invoke(obj)?.toString(); if (!v.isNullOrBlank()) return v }
+            } catch (_: Throwable) {}
         }
         return null
     }
