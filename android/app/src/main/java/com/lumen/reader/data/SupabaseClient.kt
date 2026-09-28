@@ -168,9 +168,8 @@ object SupabaseClient {
         lastError = null
         val token = accessToken
         if (token.isNullOrBlank()) { lastError = "Not signed in"; return@withContext false }
-        // Local non-null copies so nested lambdas keep smart-casts
-        val chapterText: String? = firstChapterText
-        val chapterTitle: String? = firstChapterTitle
+        val safeChapterText = firstChapterText?.takeIf { it.isNotBlank() }
+        val safeChapterTitle = firstChapterTitle ?: "Chapter 1"
         try {
             val payload = JSONObject().put("title", title).put("description", description)
                 .put("cover_url", coverUrl ?: JSONObject.NULL)
@@ -187,14 +186,14 @@ object SupabaseClient {
                     return@withContext false
                 }
                 val seriesId = try {
-                    val arr = JSONArray(body)
-                    arr.optJSONObject(0)?.optString("id").orEmpty()
-                } catch (_: Exception) { JSONObject(body).optString("id") }
-                val textBody = chapterText
-                if (seriesId.isNotBlank() && !textBody.isNullOrBlank()) {
-                    val safeText: String = textBody
+                    JSONArray(body).optJSONObject(0)?.optString("id").orEmpty()
+                } catch (_: Exception) {
+                    try { JSONObject(body).optString("id") } catch (_: Exception) { "" }
+                }
+                if (seriesId.isNotBlank() && safeChapterText != null) {
+                    val text: String = safeChapterText
                     val chPayload = JSONObject().put("series_id", seriesId).put("chapter_number", 1)
-                        .put("title", chapterTitle ?: "Chapter 1")
+                        .put("title", safeChapterTitle)
                         .put("content_type", "text").put("status", "published")
                     val chReq = Request.Builder().url("$URL/rest/v1/chapters").header("apikey", ANON_KEY)
                         .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
@@ -205,8 +204,8 @@ object SupabaseClient {
                         val chId = try { JSONArray(chBody).optJSONObject(0)?.optString("id") } catch (_: Exception) { null }
                         if (!chId.isNullOrBlank()) {
                             val contentPayload = JSONObject().put("chapter_id", chId)
-                                .put("content", safeText)
-                                .put("word_count", safeText.split(Regex("\\s+")).size)
+                                .put("content", text)
+                                .put("word_count", text.split(Regex("\\s+")).size)
                             val cReq = Request.Builder().url("$URL/rest/v1/chapter_content").header("apikey", ANON_KEY)
                                 .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
                                 .header("Prefer", "return=minimal")
@@ -233,8 +232,13 @@ object SupabaseClient {
                 val arr = JSONArray(resp.body?.string().orEmpty())
                 (0 until arr.length()).mapNotNull { i ->
                     val o = arr.optJSONObject(i) ?: return@mapNotNull null
-                    LumenSeries(o.optString("id"), o.optString("title"), o.optString("description"),
-                        o.optString("cover_url").ifBlank { null }, o.optString("content_type", "novel"))
+                    LumenSeries(
+                        o.optString("id"),
+                        o.optString("title"),
+                        o.optString("description"),
+                        o.optString("cover_url").takeIf { it.isNotBlank() },
+                        o.optString("content_type", "novel")
+                    )
                 }
             }
         } catch (_: Exception) { emptyList() }
@@ -251,15 +255,23 @@ object SupabaseClient {
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext null
                 val uname = JSONArray(resp.body?.string().orEmpty()).optJSONObject(0)?.optString("username")
-                uname?.takeIf { it.isNotBlank() }
+                if (uname.isNullOrBlank()) null else uname
             }
         } catch (_: Exception) { null }
     }
 
-    private fun parseAuthError(body: String): String? = try {
-        val j = JSONObject(body)
-        j.optString("error_description").ifBlank {
-            j.optString("msg").ifBlank { j.optString("message").ifBlank { null } }
-        }.ifBlank { null }
-    } catch (_: Exception) { null }
+    private fun parseAuthError(body: String): String? {
+        return try {
+            val j = JSONObject(body)
+            val candidates = listOf(
+                j.optString("error_description"),
+                j.optString("msg"),
+                j.optString("message"),
+                j.optJSONObject("error")?.optString("message").orEmpty()
+            )
+            candidates.firstOrNull { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
+        }
+    }
 }
