@@ -27,6 +27,8 @@ object SupabaseClient {
     var accessToken: String? = null
         private set
 
+    fun clearToken() { accessToken = null }
+
     data class Health(val ok: Boolean, val message: String, val seriesCount: Int = 0)
 
     suspend fun checkHealth(): Health = withContext(Dispatchers.IO) {
