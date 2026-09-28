@@ -168,6 +168,9 @@ object SupabaseClient {
         lastError = null
         val token = accessToken
         if (token.isNullOrBlank()) { lastError = "Not signed in"; return@withContext false }
+        // Local non-null copies so nested lambdas keep smart-casts
+        val chapterText: String? = firstChapterText
+        val chapterTitle: String? = firstChapterTitle
         try {
             val payload = JSONObject().put("title", title).put("description", description)
                 .put("cover_url", coverUrl ?: JSONObject.NULL)
@@ -187,9 +190,11 @@ object SupabaseClient {
                     val arr = JSONArray(body)
                     arr.optJSONObject(0)?.optString("id").orEmpty()
                 } catch (_: Exception) { JSONObject(body).optString("id") }
-                if (seriesId.isNotBlank() && !firstChapterText.isNullOrBlank()) {
+                val textBody = chapterText
+                if (seriesId.isNotBlank() && !textBody.isNullOrBlank()) {
+                    val safeText: String = textBody
                     val chPayload = JSONObject().put("series_id", seriesId).put("chapter_number", 1)
-                        .put("title", firstChapterTitle ?: "Chapter 1")
+                        .put("title", chapterTitle ?: "Chapter 1")
                         .put("content_type", "text").put("status", "published")
                     val chReq = Request.Builder().url("$URL/rest/v1/chapters").header("apikey", ANON_KEY)
                         .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
@@ -200,8 +205,8 @@ object SupabaseClient {
                         val chId = try { JSONArray(chBody).optJSONObject(0)?.optString("id") } catch (_: Exception) { null }
                         if (!chId.isNullOrBlank()) {
                             val contentPayload = JSONObject().put("chapter_id", chId)
-                                .put("content", firstChapterText)
-                                .put("word_count", firstChapterText.split(Regex("\\s+")).size)
+                                .put("content", safeText)
+                                .put("word_count", safeText.split(Regex("\\s+")).size)
                             val cReq = Request.Builder().url("$URL/rest/v1/chapter_content").header("apikey", ANON_KEY)
                                 .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
                                 .header("Prefer", "return=minimal")
@@ -245,7 +250,8 @@ object SupabaseClient {
                 .header("Accept", "application/json").get().build()
             client.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) return@withContext null
-                JSONArray(resp.body?.string().orEmpty()).optJSONObject(0)?.optString("username")?.ifBlank { null }
+                val uname = JSONArray(resp.body?.string().orEmpty()).optJSONObject(0)?.optString("username")
+                uname?.takeIf { it.isNotBlank() }
             }
         } catch (_: Exception) { null }
     }
