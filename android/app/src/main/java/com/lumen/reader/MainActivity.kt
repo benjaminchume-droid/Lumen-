@@ -29,15 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.lumen.reader.core.Aggregator
-import com.lumen.reader.core.CatalogService
-import com.lumen.reader.core.ChapterMeta
-import com.lumen.reader.core.SourcePriority
-import com.lumen.reader.core.ExtensionRuntime
-import com.lumen.reader.core.ExtensionInstaller
-import com.lumen.reader.core.IndexEntry
-import com.lumen.reader.core.SecureDownloadStore
-import com.lumen.reader.core.SourceStore
+import com.lumen.reader.core.*
 import com.lumen.reader.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -75,6 +67,7 @@ fun LumenAppRoot() {
     var tab by remember { mutableStateOf(Tab.Home) }
     var sourcesOpen by remember { mutableStateOf(false) }
     var authOpen by remember { mutableStateOf(false) }
+    var downloadsOpen by remember { mutableStateOf(false) }
     var settingsOpen by remember { mutableStateOf(false) }
     var creatorOpen by remember { mutableStateOf(false) }
     var detail by remember { mutableStateOf<CatalogSeries?>(null) }
@@ -102,19 +95,15 @@ fun LumenAppRoot() {
             val withSite = installed.filter {
                 (!it.site.isNullOrBlank() && it.site!!.startsWith("http")) || !it.pkg.isNullOrBlank()
             }
-            if (withSite.isEmpty() && installed.isEmpty()) {
-                feed = emptyList()
-                feedLoading = false
-                return@launch
-            }
             val sources = withSite.ifEmpty { installed }.take(12)
             try {
                 val live = withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(25_000L) {
-                        runtime.fetchAllPopular(sources, perSource = 16, maxConcurrent = 4)
+                    withTimeoutOrNull(20_000L) {
+                        if (sources.isEmpty()) emptyList()
+                        else runtime.fetchAllPopular(sources, perSource = 12, maxConcurrent = 4)
                     } ?: emptyList()
                 }
-                feed = live.map { ls ->
+                val fromSources = live.map { ls ->
                     CatalogSeries(
                         id = ls.id, title = ls.title,
                         author = ls.author.ifBlank { ls.sourceName },
@@ -126,6 +115,20 @@ fun LumenAppRoot() {
                         seriesUrl = ls.url, sourceId = ls.sourceId
                     )
                 }
+                val lumen = runCatching {
+                    com.lumen.reader.data.SupabaseClient.fetchLumenFeed(24)
+                }.getOrDefault(emptyList()).map { s ->
+                    CatalogSeries(
+                        id = "lumen_" + s.id, title = s.title, author = "Lumen",
+                        sourceName = "Lumen",
+                        kind = if (s.contentType.contains("novel", true)) "novel" else "manga",
+                        description = s.description, genres = listOf("Lumen"),
+                        status = "Ongoing", chapters = emptyList(),
+                        coverHint = 0xFF1E2A3A, coverUrl = s.coverUrl,
+                        seriesUrl = null, sourceId = "lumen"
+                    )
+                }
+                feed = lumen + fromSources
                 if (feed.isEmpty() && sources.isNotEmpty()) {
                     feedError = "No listings yet — refresh or check Sources."
                 }
@@ -137,13 +140,22 @@ fun LumenAppRoot() {
     }
 
     LaunchedEffect(installTick) { loadFeed() }
+    LaunchedEffect(Unit) {
+        val u = com.lumen.reader.data.SupabaseClient.refreshProfileUsername()
+        if (!u.isNullOrBlank()) {
+            com.lumen.reader.data.AuthSession.markSignedIn(
+                context, com.lumen.reader.data.AuthSession.email(context), u
+            )
+        }
+    }
 
-    BackHandler(enabled = authOpen || sourcesOpen || settingsOpen || creatorOpen || detail != null || reading != null) {
+    BackHandler(enabled = authOpen || sourcesOpen || settingsOpen || creatorOpen || downloadsOpen || detail != null || reading != null) {
         when {
             reading != null -> reading = null
             detail != null -> detail = null
             creatorOpen -> creatorOpen = false
             settingsOpen -> settingsOpen = false
+            downloadsOpen -> downloadsOpen = false
             authOpen -> authOpen = false
             sourcesOpen -> { sourcesOpen = false; installTick++ }
         }
@@ -207,6 +219,10 @@ fun LumenAppRoot() {
     }
     if (creatorOpen) {
         CreatorStudioScreen(onBack = { creatorOpen = false }, onNeedAuth = { creatorOpen = false; authOpen = true })
+        return
+    }
+    if (downloadsOpen) {
+        DownloadsScreen(onBack = { downloadsOpen = false })
         return
     }
     if (settingsOpen) {
@@ -284,7 +300,7 @@ fun LumenAppRoot() {
                 Tab.More -> MoreScreen(
                     onSignIn = { authOpen = true },
                     onOpenSources = { sourcesOpen = true },
-                    onOpenDownloads = { },
+                    onOpenDownloads = { downloadsOpen = true },
                     onOpenSettings = { settingsOpen = true },
                     onOpenCreator = {
                         if (com.lumen.reader.data.AuthSession.isSignedIn(context)) creatorOpen = true
@@ -371,8 +387,6 @@ private fun HomeGrid(
         Spacer(Modifier.height(12.dp))
         when {
             loading -> {
-                Text("Loading…", color = LumenColors.MistGray, fontSize = 12.sp)
-                Spacer(Modifier.height(12.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(bottom = 24.dp),
@@ -382,29 +396,20 @@ private fun HomeGrid(
                 ) {
                     items(6) {
                         Column(Modifier.fillMaxWidth()) {
-                            Box(
-                                Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFF1A2030))
-                            )
+                            Box(Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp)).background(Color(0xFF1A2030)))
                             Spacer(Modifier.height(6.dp))
                             Box(Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF1A2030)))
-                            Spacer(Modifier.height(4.dp))
-                            Box(Modifier.fillMaxWidth(0.5f).height(10.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF151A22)))
                         }
                     }
                 }
             }
-            installedCount == 0 -> Box(
-                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
-                    .background(LumenColors.DeepGraphite).padding(20.dp)
+            installedCount == 0 && feed.isEmpty() -> Box(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(LumenColors.DeepGraphite).padding(20.dp)
             ) {
                 Column {
                     Text("No extensions yet", color = LumenColors.FrostWhite, fontWeight = FontWeight.Medium)
                     Spacer(Modifier.height(6.dp))
-                    Text(
-                        "Open Sources — full Keiyoushi + LNReader indexes. Enable any source; Home loads from all installed.",
-                        color = LumenColors.MistGray.copy(alpha = 0.8f), fontSize = 13.sp
-                    )
+                    Text("Open Sources to install Keiyoushi / LNReader extensions.", color = LumenColors.MistGray, fontSize = 13.sp)
                     Spacer(Modifier.height(14.dp))
                     Text("Install extensions", color = LumenColors.SoftBlack, fontWeight = FontWeight.SemiBold, fontSize = 13.sp,
                         modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(LumenColors.FrostedBlue)
@@ -414,12 +419,9 @@ private fun HomeGrid(
             feed.isEmpty() -> Column {
                 error?.let { Text(it, color = LumenColors.MistGray, fontSize = 13.sp); Spacer(Modifier.height(8.dp)) }
                 Text("Refresh feed", color = LumenColors.FrostedBlue, modifier = Modifier.clickable(onClick = onRefresh))
-                Text("Manage extensions", color = LumenColors.FrostedBlue,
-                    modifier = Modifier.clickable(onClick = onOpenSources).padding(top = 8.dp))
+                Text("Manage extensions", color = LumenColors.FrostedBlue, modifier = Modifier.clickable(onClick = onOpenSources).padding(top = 8.dp))
             }
             else -> {
-                Text("From your sources", color = LumenColors.MistGray.copy(alpha = 0.7f), fontSize = 11.sp, letterSpacing = 1.sp)
-                Spacer(Modifier.height(8.dp))
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     contentPadding = PaddingValues(bottom = 24.dp),
@@ -435,12 +437,8 @@ private fun HomeGrid(
                                 contentAlignment = Alignment.BottomStart
                             ) {
                                 if (!series.coverUrl.isNullOrBlank()) {
-                                    AsyncImage(
-                                        model = series.coverUrl,
-                                        contentDescription = series.title,
-                                        contentScale = ContentScale.Crop,
-                                        modifier = Modifier.fillMaxSize()
-                                    )
+                                    AsyncImage(model = series.coverUrl, contentDescription = series.title,
+                                        contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
                                 }
                                 Text(series.kind.uppercase(), color = LumenColors.FrostedBlue, fontSize = 10.sp,
                                     fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(10.dp))
