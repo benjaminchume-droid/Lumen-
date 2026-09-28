@@ -42,6 +42,7 @@ import com.lumen.reader.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 enum class Tab(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Default.List),
@@ -106,25 +107,32 @@ fun LumenAppRoot() {
                 feedLoading = false
                 return@launch
             }
-            val live = withContext(Dispatchers.IO) {
-                runtime.fetchAllPopular(withSite.ifEmpty { installed }, perSource = 80, maxConcurrent = 8)
-            }
-            feed = live.map { ls ->
-                CatalogSeries(
-                    id = ls.id, title = ls.title,
-                    author = ls.author.ifBlank { ls.sourceName },
-                    sourceName = ls.sourceName, kind = ls.kind,
-                    description = ls.description,
-                    genres = ls.genres.ifEmpty { listOf(ls.sourceName) },
-                    status = "Ongoing", chapters = emptyList(),
-                    coverHint = 0xFF1E2A3A, coverUrl = ls.coverUrl,
-                    seriesUrl = ls.url, sourceId = ls.sourceId
-                )
+            val sources = withSite.ifEmpty { installed }.take(12)
+            try {
+                val live = withContext(Dispatchers.IO) {
+                    withTimeoutOrNull(25_000L) {
+                        runtime.fetchAllPopular(sources, perSource = 16, maxConcurrent = 4)
+                    } ?: emptyList()
+                }
+                feed = live.map { ls ->
+                    CatalogSeries(
+                        id = ls.id, title = ls.title,
+                        author = ls.author.ifBlank { ls.sourceName },
+                        sourceName = ls.sourceName, kind = ls.kind,
+                        description = ls.description,
+                        genres = ls.genres.ifEmpty { listOf(ls.sourceName) },
+                        status = "Ongoing", chapters = emptyList(),
+                        coverHint = 0xFF1E2A3A, coverUrl = ls.coverUrl,
+                        seriesUrl = ls.url, sourceId = ls.sourceId
+                    )
+                }
+                if (feed.isEmpty() && sources.isNotEmpty()) {
+                    feedError = "No listings yet — refresh or check Sources."
+                }
+            } catch (e: Exception) {
+                feedError = e.message ?: "Load failed"
             }
             feedLoading = false
-            if (feed.isEmpty() && installed.isNotEmpty()) {
-                feedError = "No listings from installed sources yet."
-            }
         }
     }
 
@@ -353,7 +361,7 @@ private fun HomeGrid(
         Text("Home", color = LumenColors.FrostWhite, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
         Text(
             when {
-                loading -> "Loading series from installed sources\u2026"
+                loading -> "Loading series from installed sources…"
                 installedCount == 0 -> "Install extensions to fill this feed"
                 feed.isEmpty() -> "$installedCount source(s) · no listings yet"
                 else -> "${feed.size} titles from $installedCount source(s)"
@@ -362,8 +370,29 @@ private fun HomeGrid(
         )
         Spacer(Modifier.height(12.dp))
         when {
-            loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = LumenColors.FrostedBlue)
+            loading -> {
+                Text("Loading…", color = LumenColors.MistGray, fontSize = 12.sp)
+                Spacer(Modifier.height(12.dp))
+                LazyVerticalGrid(
+                    columns = GridCells.Fixed(2),
+                    contentPadding = PaddingValues(bottom = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp),
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    items(6) {
+                        Column(Modifier.fillMaxWidth()) {
+                            Box(
+                                Modifier.fillMaxWidth().aspectRatio(0.72f).clip(RoundedCornerShape(14.dp))
+                                    .background(Color(0xFF1A2030))
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Box(Modifier.fillMaxWidth(0.8f).height(12.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF1A2030)))
+                            Spacer(Modifier.height(4.dp))
+                            Box(Modifier.fillMaxWidth(0.5f).height(10.dp).clip(RoundedCornerShape(4.dp)).background(Color(0xFF151A22)))
+                        }
+                    }
+                }
             }
             installedCount == 0 -> Box(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp))
