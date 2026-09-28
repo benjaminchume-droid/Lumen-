@@ -25,10 +25,7 @@ fun DownloadsScreen(onBack: () -> Unit) {
     val chapters = remember { store.listDownloaded() }
 
     Column(
-        Modifier
-            .fillMaxSize()
-            .background(LumenColors.SoftBlack)
-            .padding(horizontal = 16.dp)
+        Modifier.fillMaxSize().background(LumenColors.SoftBlack).padding(horizontal = 16.dp)
     ) {
         Spacer(Modifier.height(40.dp))
         TextButton(onClick = onBack) { Text("← Back", color = LumenColors.FrostedBlue) }
@@ -39,13 +36,10 @@ fun DownloadsScreen(onBack: () -> Unit) {
             Text("No offline chapters yet. Download from a series detail screen.", color = LumenColors.MistGray, fontSize = 13.sp)
         } else {
             LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(chapters) { (id, title) ->
+                items(chapters) { (title, id) ->
                     Column(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(LumenColors.DeepGraphite)
-                            .padding(14.dp)
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp))
+                            .background(LumenColors.DeepGraphite).padding(14.dp)
                     ) {
                         Text(title.ifBlank { id }, color = LumenColors.FrostWhite, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                         Text(id, color = LumenColors.MistGray, fontSize = 11.sp)
