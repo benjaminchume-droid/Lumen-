@@ -4,16 +4,21 @@ on:
   push:
     tags:
       - "v*"
+    branches:
+      - main
+    paths:
+      - "android/**"
+      - ".github/workflows/build-release.yml"
   workflow_dispatch:
     inputs:
       version_name:
-        description: "Version name (e.g. 1.0.0)"
+        description: "Version name (e.g. 1.8.1)"
         required: true
-        default: "1.0.0"
+        default: "1.8.1"
       version_code:
         description: "Version code (integer)"
         required: true
-        default: "1"
+        default: "181"
 
 permissions:
   contents: write
@@ -85,10 +90,23 @@ jobs:
             echo "name=${{ github.event.inputs.version_name }}" >> $GITHUB_OUTPUT
             echo "code=${{ github.event.inputs.version_code }}" >> $GITHUB_OUTPUT
             echo "tag=v${{ github.event.inputs.version_name }}" >> $GITHUB_OUTPUT
-          else
+          elif [ "${{ github.event_name }}" = "push" ] && [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             TAG="${GITHUB_REF#refs/tags/}"
             NAME="${TAG#v}"
             CODE=$(echo "$NAME" | awk -F. '{print ($1*10000)+($2*100)+$3}')
+            echo "name=$NAME" >> $GITHUB_OUTPUT
+            echo "code=$CODE" >> $GITHUB_OUTPUT
+            echo "tag=$TAG" >> $GITHUB_OUTPUT
+          else
+            # push to main — use VERSION file or default 1.8.1
+            if [ -f android/VERSION ]; then
+              NAME=$(tr -d ' \n\r' < android/VERSION)
+            else
+              NAME="1.8.1"
+            fi
+            CODE=$(echo "$NAME" | awk -F. '{print ($1*10000)+($2*100)+$3}')
+            # unique tag per run so release does not collide
+            TAG="v${NAME}+${GITHUB_RUN_NUMBER}"
             echo "name=$NAME" >> $GITHUB_OUTPUT
             echo "code=$CODE" >> $GITHUB_OUTPUT
             echo "tag=$TAG" >> $GITHUB_OUTPUT
@@ -135,12 +153,12 @@ jobs:
           body: |
             ## Lumen ${{ steps.ver.outputs.name }}
 
-            Signed release APK (stable signing key for continuous updates).
+            Signed release APK.
 
-            - Extensions (Keiyoushi + LNReader)
-            - Home feed from installed sources
-            - Series detail + chapter list
-            - Immersive reader (scroll / page)
+            - Dual runtime: Mihon PathClassLoader + LNReader Rhino
+            - Hybrid chapter lists (extension + AJAX scrape merge)
+            - Progressive Home with parallel sources
+            - SourceRegistry contract for catalog/detail/content
           files: ${{ steps.apk.outputs.path }}
           draft: false
           prerelease: false
