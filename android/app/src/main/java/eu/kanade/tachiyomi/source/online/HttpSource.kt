@@ -16,10 +16,6 @@ import rx.Observable
 import uy.kohesive.injekt.Injekt
 import java.security.MessageDigest
 
-/**
- * Base HTTP source matching Mihon/Tachiyomi extension API surface.
- * Extensions subclass this (or ParsedHttpSource) and override request/parse pairs.
- */
 abstract class HttpSource : CatalogueSource {
 
     override val id by lazy {
@@ -34,9 +30,14 @@ abstract class HttpSource : CatalogueSource {
 
     open val client: OkHttpClient
         get() = try {
-            Injekt.get(NetworkHelper::class.java).client
+            val nh = Injekt.get(NetworkHelper::class.java)
+            nh.cloudflareClient
         } catch (_: Throwable) {
-            NetworkHelper().client
+            try {
+                Injekt.get(NetworkHelper::class.java).client
+            } catch (_: Throwable) {
+                NetworkHelper().cloudflareClient
+            }
         }
 
     override val supportsLatest: Boolean = true
@@ -46,82 +47,63 @@ abstract class HttpSource : CatalogueSource {
     open fun headersBuilder() = Headers.Builder()
         .add("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36")
 
-    // --- Popular ---
     override fun fetchPopularManga(page: Int): Observable<MangasPage> =
         Observable.fromCallable {
-            val response = client.newCall(popularMangaRequest(page)).execute()
-            popularMangaParse(response)
+            client.newCall(popularMangaRequest(page)).execute().use { popularMangaParse(it) }
         }
 
-    open fun popularMangaRequest(page: Int): Request =
-        GET("$baseUrl/", headers)
+    open fun popularMangaRequest(page: Int): Request = GET("$baseUrl/", headers)
 
-    open fun popularMangaParse(response: Response): MangasPage =
-        MangasPage(emptyList(), false)
+    open fun popularMangaParse(response: Response): MangasPage = MangasPage(emptyList(), false)
 
-    // --- Search ---
     override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> =
         Observable.fromCallable {
-            val response = client.newCall(searchMangaRequest(page, query, filters)).execute()
-            searchMangaParse(response)
+            client.newCall(searchMangaRequest(page, query, filters)).execute().use { searchMangaParse(it) }
         }
 
     open fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request =
         GET("$baseUrl/?s=${java.net.URLEncoder.encode(query, "UTF-8")}", headers)
 
-    open fun searchMangaParse(response: Response): MangasPage =
-        MangasPage(emptyList(), false)
+    open fun searchMangaParse(response: Response): MangasPage = MangasPage(emptyList(), false)
 
-    // --- Latest ---
     override fun fetchLatestUpdates(page: Int): Observable<MangasPage> =
         Observable.fromCallable {
-            val response = client.newCall(latestUpdatesRequest(page)).execute()
-            latestUpdatesParse(response)
+            client.newCall(latestUpdatesRequest(page)).execute().use { latestUpdatesParse(it) }
         }
 
-    open fun latestUpdatesRequest(page: Int): Request =
-        GET("$baseUrl/", headers)
+    open fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/", headers)
 
-    open fun latestUpdatesParse(response: Response): MangasPage =
-        MangasPage(emptyList(), false)
+    open fun latestUpdatesParse(response: Response): MangasPage = MangasPage(emptyList(), false)
 
-    // --- Details ---
     override fun fetchMangaDetails(manga: SManga): Observable<SManga> =
         Observable.fromCallable {
-            val response = client.newCall(mangaDetailsRequest(manga)).execute()
-            mangaDetailsParse(response).apply {
-                initialized = true
-                url = manga.url
+            client.newCall(mangaDetailsRequest(manga)).execute().use { response ->
+                mangaDetailsParse(response).apply {
+                    initialized = true
+                    url = manga.url
+                }
             }
         }
 
-    open fun mangaDetailsRequest(manga: SManga): Request =
-        GET(baseUrl + manga.url, headers)
+    open fun mangaDetailsRequest(manga: SManga): Request = GET(baseUrl + manga.url, headers)
 
-    open fun mangaDetailsParse(response: Response): SManga =
-        SManga.create()
+    open fun mangaDetailsParse(response: Response): SManga = SManga.create()
 
-    // --- Chapters ---
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> =
         Observable.fromCallable {
-            val response = client.newCall(chapterListRequest(manga)).execute()
-            chapterListParse(response)
+            client.newCall(chapterListRequest(manga)).execute().use { chapterListParse(it) }
         }
 
-    open fun chapterListRequest(manga: SManga): Request =
-        GET(baseUrl + manga.url, headers)
+    open fun chapterListRequest(manga: SManga): Request = GET(baseUrl + manga.url, headers)
 
     open fun chapterListParse(response: Response): List<SChapter> = emptyList()
 
-    // --- Pages ---
     override fun fetchPageList(chapter: SChapter): Observable<List<Page>> =
         Observable.fromCallable {
-            val response = client.newCall(pageListRequest(chapter)).execute()
-            pageListParse(response)
+            client.newCall(pageListRequest(chapter)).execute().use { pageListParse(it) }
         }
 
-    open fun pageListRequest(chapter: SChapter): Request =
-        GET(baseUrl + chapter.url, headers)
+    open fun pageListRequest(chapter: SChapter): Request = GET(baseUrl + chapter.url, headers)
 
     open fun pageListParse(response: Response): List<Page> = emptyList()
 
