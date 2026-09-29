@@ -191,54 +191,42 @@ fun UpdatesTab(
     }
 }
 
+/**
+ * Opens series detail via SourceRegistry only (Mihon → LN → fallback).
+ */
 fun openDetail(
-    series: CatalogSeries, installed: List<IndexEntry>,
-    runtime: ExtensionRuntime,
-    scope: kotlinx.coroutines.CoroutineScope, setDetail: (CatalogSeries) -> Unit
+    series: CatalogSeries,
+    registry: SourceRegistry,
+    scope: kotlinx.coroutines.CoroutineScope,
+    setDetail: (CatalogSeries) -> Unit
 ) {
-    val entry = installed.find { it.id == series.sourceId }
-        ?: installed.find { series.id.startsWith(it.id) }
     setDetail(series)
-    if (entry == null || series.seriesUrl.isNullOrBlank()) return
+    val sourceId = series.sourceId ?: return
+    val seriesUrl = series.seriesUrl ?: return
+    if (sourceId == "lumen") return
     scope.launch {
-        val (live, chapters) = withContext(Dispatchers.IO) {
-            val reflected = runtime.tryReflectChapters(entry, series.seriesUrl!!)
-            val scraped = CatalogService.fetchDetailsAndChapters(series.seriesUrl!!, entry)
-            val chapterLists = buildList {
-                if (reflected.isNotEmpty()) {
-                    add(reflected.map {
-                        ChapterMeta(url = it.url, name = it.title, number = it.number, sourceId = entry.id)
-                    })
-                }
-                if (scraped.second.isNotEmpty()) {
-                    add(scraped.second.map {
-                        ChapterMeta(url = it.url, name = it.title, number = it.number, sourceId = entry.id + "_web")
-                    })
-                }
-            }
-            val merged = if (chapterLists.size > 1) {
-                Aggregator.mergeChapters(
-                    chapterLists,
-                    listOf(
-                        SourcePriority(entry.id, priority = 10, qualityScore = 90),
-                        SourcePriority(entry.id + "_web", priority = 5, qualityScore = 70)
-                    )
-                ).map { CatalogService.LiveChapter(it.primary.url, it.name, it.primary.url, it.number) }
-            } else {
-                reflected.ifEmpty { scraped.second }
-            }
-            scraped.first to merged
+        val details = withContext(Dispatchers.IO) {
+            runCatching { registry.details(sourceId, seriesUrl) }.getOrNull()
         }
-        setDetail(series.copy(
-            title = live.title.ifBlank { series.title },
-            author = live.author.ifBlank { series.author },
-            description = live.description.ifBlank { series.description },
-            genres = live.genres.ifEmpty { series.genres },
-            coverUrl = live.coverUrl?.takeIf { it.isNotBlank() } ?: series.coverUrl,
-            chapters = chapters.mapIndexed { i, c ->
-                SeriesChapter(id = c.url, title = c.title, number = c.number.toInt().coerceAtLeast(i + 1))
-            }
-        ))
+        val chapters = withContext(Dispatchers.IO) {
+            runCatching { registry.chapters(sourceId, seriesUrl) }.getOrDefault(emptyList())
+        }
+        setDetail(
+            series.copy(
+                title = details?.title?.takeIf { it.isNotBlank() } ?: series.title,
+                author = details?.author?.takeIf { it.isNotBlank() } ?: series.author,
+                description = details?.description?.takeIf { it.isNotBlank() } ?: series.description,
+                genres = details?.genres?.takeIf { it.isNotEmpty() } ?: series.genres,
+                coverUrl = details?.coverUrl?.takeIf { it.isNotBlank() } ?: series.coverUrl,
+                chapters = chapters.mapIndexed { i, c ->
+                    SeriesChapter(
+                        id = c.url,
+                        title = c.name,
+                        number = c.number.toInt().coerceAtLeast(i + 1)
+                    )
+                }
+            )
+        )
     }
 }
 
