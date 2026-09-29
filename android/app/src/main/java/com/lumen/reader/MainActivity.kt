@@ -22,7 +22,6 @@ import com.lumen.reader.ui.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 
 enum class Tab(val label: String, val icon: ImageVector) {
     Library("Library", Icons.Default.List),
@@ -50,7 +49,7 @@ fun LumenAppRoot() {
     val store = remember { SourceStore(context) }
     val installer = remember { ExtensionInstaller(context) }
     val dlStore = remember { SecureDownloadStore(context) }
-    val runtime = remember { ExtensionRuntime(context) }
+    val registry = remember { SourceRegistry(context) }
     val libStore = remember { LibraryStore(context) }
     val updater = remember { AppUpdateManager(context) }
     val scope = rememberCoroutineScope()
@@ -79,27 +78,37 @@ fun LumenAppRoot() {
         }
     }
 
-    fun toCatalog(ls: CatalogService.LiveSeries) = CatalogSeries(
-        id = ls.id, title = ls.title,
-        author = ls.author.ifBlank { ls.sourceName },
-        sourceName = ls.sourceName, kind = ls.kind,
-        description = ls.description,
-        genres = ls.genres.ifEmpty { listOf(ls.sourceName) },
-        status = "Ongoing", chapters = emptyList(),
-        coverHint = 0xFF1E2A3A, coverUrl = ls.coverUrl,
-        seriesUrl = ls.url, sourceId = ls.sourceId
+    fun metaToCatalog(m: SeriesMeta, sourceName: String): CatalogSeries = CatalogSeries(
+        id = "${m.sourceId}|${m.url}|${m.title}",
+        title = m.title,
+        author = m.author ?: sourceName,
+        sourceName = sourceName,
+        kind = if (m.kind == MediaKind.NOVEL) "novel" else "manga",
+        description = m.description.orEmpty(),
+        genres = m.genres.ifEmpty { listOf(sourceName) },
+        status = m.status.ifBlank { "Ongoing" },
+        chapters = emptyList(),
+        coverHint = 0xFF1E2A3A,
+        coverUrl = m.coverUrl,
+        seriesUrl = m.url,
+        sourceId = m.sourceId
     )
 
     fun loadFeed() {
         scope.launch {
             feedLoading = true
             feedError = null
-            feedProgress = "Starting\u2026"
+            feedProgress = "Binding sources\u2026"
             refreshInstalled()
             val withSite = installed.filter {
                 (!it.site.isNullOrBlank() && it.site!!.startsWith("http")) || !it.pkg.isNullOrBlank()
             }
-            val sources = withSite.ifEmpty { installed }.take(16)
+            val sources = withSite.ifEmpty { installed }.take(24)
+
+            withContext(Dispatchers.IO) {
+                registry.bindInstalled(sources)
+            }
+
             val seen = linkedMapOf<String, CatalogSeries>()
 
             feedProgress = "Lumen catalog\u2026"
@@ -129,18 +138,16 @@ fun LumenAppRoot() {
                 return@launch
             }
 
-            for ((idx, entry) in sources.withIndex()) {
-                feedProgress = "${entry.name} (${idx + 1}/${sources.size})"
+            // Progressive: one ContentSource at a time via registry
+            registry.progressivePopular(
+                sourceIds = sources.map { it.id },
+                perSource = 16
+            ) { sourceId, items ->
+                val name = sources.find { it.id == sourceId }?.name ?: sourceId
+                feedProgress = "$name"
                 feedLoading = true
-                val batch = withContext(Dispatchers.IO) {
-                    withTimeoutOrNull(10_000L) {
-                        runCatching {
-                            runtime.fetchAllPopular(listOf(entry), perSource = 16, maxConcurrent = 1)
-                        }.getOrDefault(emptyList())
-                    } ?: emptyList()
-                }
-                for (ls in batch) {
-                    val c = toCatalog(ls)
+                for (m in items) {
+                    val c = metaToCatalog(m, name)
                     if (!seen.containsKey(c.id)) seen[c.id] = c
                 }
                 feed = seen.values.toList()
@@ -198,7 +205,15 @@ fun LumenAppRoot() {
                     val isNovel = d.kind.equals("novel", ignoreCase = true)
                     val cached = dlStore.loadChapter(ch.id)
                     val pages = cached ?: withContext(Dispatchers.IO) {
-                        CatalogService.fetchChapterPages(ch.id, isNovel)
+                        val payload = d.sourceId?.let { sid ->
+                            runCatching { registry.content(sid, ch.id) }.getOrNull()
+                        }
+                        when (payload) {
+                            is ContentPayload.Text -> payload.blocks.map { it.text }
+                            is ContentPayload.Images -> payload.pages.map { it.imageUrl }
+                            is ContentPayload.Epub -> listOf(payload.fileUrl)
+                            null -> emptyList()
+                        }
                     }
                     reading = if (isNovel) {
                         SAMPLE_NOVEL.copy(
@@ -218,13 +233,22 @@ fun LumenAppRoot() {
             onDownloadChapters = { chapters ->
                 scope.launch {
                     val series = detail ?: return@launch
-                    val isNovel = series.kind.equals("novel", ignoreCase = true)
                     for (ch in chapters) {
                         if (dlStore.isDownloaded(ch.id)) continue
                         val pages = withContext(Dispatchers.IO) {
-                            CatalogService.fetchChapterPages(ch.id, isNovel)
+                            val payload = series.sourceId?.let { sid ->
+                                runCatching { registry.content(sid, ch.id) }.getOrNull()
+                            }
+                            when (payload) {
+                                is ContentPayload.Text -> payload.blocks.map { it.text }
+                                is ContentPayload.Images -> payload.pages.map { it.imageUrl }
+                                is ContentPayload.Epub -> listOf(payload.fileUrl)
+                                null -> emptyList()
+                            }
                         }
-                        dlStore.saveChapter(ch.id, series.id, ch.title, pages)
+                        if (pages.isNotEmpty()) {
+                            dlStore.saveChapter(ch.id, series.id, ch.title, pages)
+                        }
                     }
                 }
             }
@@ -282,20 +306,20 @@ fun LumenAppRoot() {
                 Tab.Home -> HomeGrid(
                     feed, feedLoading, feedProgress, feedError, installed.size,
                     { sourcesOpen = true },
-                    { s -> openDetail(s, installed, runtime, scope) { detail = it } },
+                    { s -> openDetail(s, registry, scope) { detail = it } },
                     { loadFeed() }
                 )
                 Tab.Library -> SeriesShelf(
                     title = "Library",
                     empty = "Add titles from Home or series detail.",
                     items = library,
-                    onOpen = { s -> openDetail(s, installed, runtime, scope) { detail = it } }
+                    onOpen = { s -> openDetail(s, registry, scope) { detail = it } }
                 )
                 Tab.History -> SeriesShelf(
                     title = "History",
                     empty = "Nothing read yet.",
                     items = history,
-                    onOpen = { s -> openDetail(s, installed, runtime, scope) { detail = it } }
+                    onOpen = { s -> openDetail(s, registry, scope) { detail = it } }
                 )
                 Tab.Updates -> UpdatesTab(
                     state = updateState,
