@@ -5,7 +5,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -274,8 +276,8 @@ fun LumenAppRoot() {
                 }
             }
         }
-    ) { padding ->
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().padding(padding)) {
+    ) { paddingValues ->
+        Box(Modifier.fillMaxSize().padding(paddingValues)) {
             when (tab) {
                 Tab.Home -> HomeGrid(
                     feed, feedLoading, feedProgress, feedError, installed.size,

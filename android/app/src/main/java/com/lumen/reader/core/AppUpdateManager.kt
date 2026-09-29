@@ -3,7 +3,6 @@ package com.lumen.reader.core
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import android.os.Build
 import androidx.core.content.FileProvider
 import com.lumen.reader.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -36,10 +35,6 @@ data class UpdateState(
         }
 }
 
-/**
- * GitHub Releases update checker + APK download with progress.
- * Idempotent: skips if same tag already downloaded / installed version matches.
- */
 class AppUpdateManager(private val context: Context) {
 
     private val client = OkHttpClient.Builder()
@@ -69,7 +64,7 @@ class AppUpdateManager(private val context: Context) {
     }
 
     suspend fun checkForUpdate(): UpdateState = withContext(Dispatchers.IO) {
-        _state.value = UpdateState(phase = UpdatePhase.CHECKING, message = "Checking GitHub releases…")
+        _state.value = UpdateState(phase = UpdatePhase.CHECKING, message = "Checking GitHub releases\u2026")
         try {
             val req = Request.Builder()
                 .url(BuildConfig.UPDATE_ENDPOINT)
@@ -100,17 +95,19 @@ class AppUpdateManager(private val context: Context) {
                 val remoteCode = parseVersionCode(tag)
                 val localCode = localVersionCode()
                 val localName = localVersionName()
-                val already = prefs.getString("installed_tag", null)
+                // Compare by versionCode primarily; tag string as fallback
                 val isNewer = when {
                     tag.isBlank() -> false
-                    already == tag -> false
                     remoteCode > 0 && localCode > 0 -> remoteCode > localCode
-                    else -> !tag.contains(localName) && tag.removePrefix("v") != localName
+                    else -> {
+                        val clean = tag.removePrefix("v")
+                        clean != localName && !localName.startsWith(clean)
+                    }
                 }
                 val s = if (isNewer && !apkUrl.isNullOrBlank()) {
                     UpdateState(
                         phase = UpdatePhase.AVAILABLE,
-                        message = "Update available: $tag",
+                        message = "Update available: $tag (you have v$localName)",
                         remoteTag = tag,
                         remoteVersionCode = remoteCode,
                         apkUrl = apkUrl
@@ -122,7 +119,10 @@ class AppUpdateManager(private val context: Context) {
                         remoteTag = tag
                     )
                 } else {
-                    UpdateState(phase = UpdatePhase.UP_TO_DATE, message = "You're up to date (v$localName)")
+                    UpdateState(
+                        phase = UpdatePhase.UP_TO_DATE,
+                        message = "You're up to date (v$localName). Latest on GitHub: ${tag.ifBlank { "unknown" }}"
+                    )
                 }
                 _state.value = s
                 s
@@ -139,7 +139,7 @@ class AppUpdateManager(private val context: Context) {
         val url = cur.apkUrl
         val tag = cur.remoteTag
         if (url.isNullOrBlank()) {
-            val s = UpdateState(phase = UpdatePhase.FAILED, message = "No APK URL — check for updates first")
+            val s = UpdateState(phase = UpdatePhase.FAILED, message = "No APK URL \u2014 check for updates first")
             _state.value = s
             return@withContext s
         }
@@ -148,7 +148,7 @@ class AppUpdateManager(private val context: Context) {
             _state.value = cur.copy(phase = UpdatePhase.READY, message = "Using cached APK", bytesDone = out.length(), bytesTotal = out.length())
             return@withContext installApk(out, tag)
         }
-        _state.value = cur.copy(phase = UpdatePhase.DOWNLOADING, message = "Downloading $tag…", bytesDone = 0, bytesTotal = 0)
+        _state.value = cur.copy(phase = UpdatePhase.DOWNLOADING, message = "Downloading $tag\u2026", bytesDone = 0, bytesTotal = 0)
         try {
             val req = Request.Builder()
                 .url(url)
@@ -180,7 +180,7 @@ class AppUpdateManager(private val context: Context) {
                             done += n
                             _state.value = cur.copy(
                                 phase = UpdatePhase.DOWNLOADING,
-                                message = "Downloading $tag…",
+                                message = "Downloading $tag\u2026",
                                 bytesDone = done,
                                 bytesTotal = if (total > 0) total else done,
                                 apkUrl = url,
@@ -211,7 +211,7 @@ class AppUpdateManager(private val context: Context) {
 
     private fun installApk(apk: File, tag: String): UpdateState {
         return try {
-            _state.value = _state.value.copy(phase = UpdatePhase.INSTALLING, message = "Opening installer…")
+            _state.value = _state.value.copy(phase = UpdatePhase.INSTALLING, message = "Opening installer\u2026")
             val uri: Uri = FileProvider.getUriForFile(
                 context,
                 "${context.packageName}.fileprovider",
