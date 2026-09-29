@@ -1,5 +1,7 @@
 package eu.kanade.tachiyomi.network
 
+import eu.kanade.tachiyomi.network.interceptor.CloudflareInterceptor
+import okhttp3.ConnectionPool
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
@@ -8,10 +10,7 @@ import okhttp3.OkHttpClient
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
-/**
- * Host NetworkHelper used by Keiyoushi / Mihon extension parsers.
- * Provides shared OkHttp client, cookie jar, and a light Cloudflare-aware client.
- */
+/** Host NetworkHelper for Keiyoushi / Mihon extension parsers. */
 class NetworkHelper {
 
     private val cookieStore = ConcurrentHashMap<String, MutableList<Cookie>>()
@@ -48,32 +47,18 @@ class NetworkHelper {
         chain.proceed(builder.build())
     }
 
-    private val cloudflareInterceptor = Interceptor { chain ->
-        var response = chain.proceed(chain.request())
-        if (response.code == 403 || response.code == 503) {
-            response.close()
-            val retry = chain.request().newBuilder()
-                .header(
-                    "User-Agent",
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-                .header("Accept-Language", "en-US,en;q=0.9")
-                .build()
-            response = chain.proceed(retry)
-        }
-        response
-    }
-
     val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(20, TimeUnit.SECONDS)
-        .readTimeout(45, TimeUnit.SECONDS)
-        .writeTimeout(30, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(30, TimeUnit.SECONDS)
+        .writeTimeout(20, TimeUnit.SECONDS)
+        .connectionPool(ConnectionPool(10, 2, TimeUnit.MINUTES))
         .followRedirects(true)
+        .retryOnConnectionFailure(true)
         .cookieJar(cookieJar)
         .addInterceptor(userAgentInterceptor)
         .build()
 
     val cloudflareClient: OkHttpClient = client.newBuilder()
-        .addInterceptor(cloudflareInterceptor)
+        .addInterceptor(CloudflareInterceptor())
         .build()
 }
