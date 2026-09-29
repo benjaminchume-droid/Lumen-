@@ -115,5 +115,7 @@ dependencies {
     implementation("org.jsoup:jsoup:1.18.1")
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    // LNReader JS plugin evaluation (pure Java, no NDK)
+    implementation("org.mozilla:rhino:1.7.15")
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
